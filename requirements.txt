@@ -1,0 +1,8 @@
+numpy
+scipy
+matplotlib
+meshio
+meshzoo
+pyvista
+pygmsh
+gif
