@@ -99,7 +99,7 @@ class MyTestCase(unittest.TestCase):
         problem.add_fixed_domain(FEMOL.domains.inside_box([[0, 10]], [[0, 10]]), ddls=[0, 1])
         problem.add_fixed_domain(FEMOL.domains.inside_box([0], [[0, 10]]))
 
-        w, v = problem.solve(verbose=False, filtre=4)
+        w, v = problem.solve(verbose=False, filtre=1)
 
         # Take only the symetric modes
         FEM_W = w[[0, 2, 3, 5, 6, 9]]

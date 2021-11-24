@@ -252,15 +252,19 @@ class FEM_Problem(object):
         w, v = self._scipy_modal_solve()
         # Transpose the eigen vectors
         v = v.T
+        # Remove Nan values and 0 values
+        v = v[~np.isnan(w)]
+        w = w[~np.isnan(w)]
+        v = v[~np.isclose(w, 0)]
+        w = w[~np.isclose(w, 0)]
+
         if verbose:
             print('solved in : ', time.time() - now, ' s')
 
         # Defined eigen_filters
         eigen_filters = {0: self._filter_eigenvalues_0,
                          1: self._filter_eigenvalues_1,
-                         2: self._filter_eigenvalues_2,
-                         3: self._filter_eigenvalues_3,
-                         4: self._filter_eigenvalues_4, }
+                         2: self._filter_eigenvalues_2,}
 
         # Filter according to the chosen filter
         current_filter = eigen_filters[filtre]
@@ -282,6 +286,9 @@ class FEM_Problem(object):
         return w, v
 
     def _filter_eigenvalues_0(self, w, v):
+        """
+        Null filter, place holder for the filter dictionary.
+        """
         if self.N_dof>0:
             pass
         return w, v
@@ -289,12 +296,12 @@ class FEM_Problem(object):
     def _filter_eigenvalues_1(self, w, v):
         """
         Basic filter removing duplicate eigenvalues in the lowest frequencies
+        and mesh related eigen vectors
         """
-        N_dof = self.N_dof
-        indexes = np.where(~np.isclose(w[:-1], w[1:]))[0][1:]
-        i = indexes[0]
+        w, v = self._filter_low_eigenvalues(w, v)
+        w, v = self._filter_mesh_modes(w, v)
 
-        return w[i:], v[indexes]
+        return w, v
 
     def _filter_eigenvalues_2(self, w, v):
         """
@@ -334,33 +341,34 @@ class FEM_Problem(object):
 
         return (np.array(w_out)*2*np.pi) ** 2, v[indexes]
 
-    def _filter_eigenvalues_3(self, w, v):
-        if hasattr(self, 'N_dof'):
-            pass
-        indexes = np.where(w > 1.01)
-        return w[indexes], v[indexes]
-
-    def _filter_eigenvalues_4(self, w, v):
+    def _filter_mesh_modes(self, w, v):
         """
-        Max outlierness of a points eigenvalue filter
+        Filters out the mesh modes by computing the eigenvector standard
+        deviation in the component of interest
+        :param w: eigen values (Hz)
+        :param v: eigen vectors
+        :return: w, v (filtered)
         """
-
+        # Take the Z component for plate models
         if self.N_dof == 6:
-            outlierness = []
-            for vector in v:
-                test_vector = vector[2::6]
-                if not np.isclose(np.max(test_vector), 0):
-                    test_vector /= np.abs(np.max(test_vector))
-                    outl = np.max([np.max(test_vector[i:i + 2]) - np.min(test_vector[i:i + 2]) for i in
-                                   range(0, len(test_vector) - 1, 2)])
-                    outlierness.append(outl)
+            # Where the standard deviation of the Z component is not zero
+            indexes = ~np.isclose([np.std(vi[2::6]) for vi in v], 0)
+            return w[indexes], v[indexes]
 
-                else:
-                    outlierness.append(1)
-            self.outlierness = np.array(outlierness)
-            boolean_array = np.array(outlierness) < 0.99
+    def _filter_low_eigenvalues(self, w, v):
+        """
+        Basic filter removing duplicate eigenvalues in the lowest frequencies
+        """
+        if self.N_dof > 1:
+            pass
+        # Convert to Hz
+        w = np.sqrt(w) / (2 * np.pi)
+        # Filter the low range duplicates
+        idx = np.where(~np.isclose(w[:-1], w[1:], 10e-5))[0][1]
+        # Convert to (rad/s)^2
+        w = (w * (2 * np.pi)) ** 2
 
-            return w[boolean_array], v[boolean_array]
+        return w[idx:], v[idx:]
 
     """
     Boundary Condition Functions
@@ -695,14 +703,15 @@ class TOPOPT_Problem(object):
     'compliance
     """
 
-    def __init__(self, Problem, volfrac=0.5, penal=3, rmin=1.5, method='SIMP'):
+    def __init__(self, Problem, volfrac=0.5, penal=3, rmin=1.5):
         """
         Constructor for the Topology Optimisation Problem
         """
-        FEM_SOLVERS = {'SIMP': self._SIMP_FEM_solver}
+        FEM_SOLVERS = {'displacement': self._SIMP_displacement_solver,
+                       'modal': self._SIMP_modal_solver}
         DISPLACEMENT_OBJECTIVE_FUNS = {'solid': self._compliance_objective_function,
                                        'coating': self._coating_compliance_objective_function}
-        VIBRATION_OBJECTIVE_FUNS = {}
+        VIBRATION_OBJECTIVE_FUNS = {'solid': self._max_eigs_objective_function()}
         OBJECTIVE_FUNCTIONS = {'displacement': DISPLACEMENT_OBJECTIVE_FUNS,
                                'vibration': VIBRATION_OBJECTIVE_FUNS}
 
@@ -710,8 +719,8 @@ class TOPOPT_Problem(object):
         self.FEM = Problem
         self.mesh = Problem.mesh
         self.mesh.compute_element_centers()
-        self.method = method
-        self.FEM_solver = FEM_SOLVERS[method]
+        self.method = 'SIMP'
+        self.FEM_solver = FEM_SOLVERS[self.FEM.physics]
         kind = 'coating' * self.FEM.coating + 'solid' * (not self.FEM.coating)
         self.objective_function = OBJECTIVE_FUNCTIONS[self.FEM.physics][kind]
 
@@ -797,13 +806,30 @@ class TOPOPT_Problem(object):
     FEM Methods
     """
 
-    def _SIMP_FEM_solver(self, X):
+    def _SIMP_displacement_solver(self, X):
         """
-        Solved the FEM Problem with the current element density values
+        Solved the FEM  displacement problem with the current element density values
         """
         self.FEM.assemble('K', X=X, p=self.p)
         U = self.FEM.solve(verbose=False).U
         return U
+
+    def _SIMP_modal_solver(self, X, v_ref):
+        """
+        Solve the FEM modal problem with the current element density values
+        """
+        self.FEM.assemble('K', X=X, p=self.p)
+        self.FEM.assemble('M', X=X, q=self.q)
+        w, v = self.FEM.solve(verbose=False)
+
+        for i, vi in enumerate(v):
+            stats = FEMOL.utils.MAC(vi, v_ref)
+            if np.isclose(stats, 1):
+                wj = w[i]
+                vj = vi
+                break
+
+        return wj**2, vj
 
     """
     Objective function methods
@@ -912,6 +938,34 @@ class TOPOPT_Problem(object):
                     dc = np.append(dc, -self.p * xe ** (self.p - 1) * Ue.transpose() @ Ke @ Ue)
 
             return c, dc
+
+    def _max_eigs_objective_function(self, X):
+        """
+        Maximize eigenvalue objective function
+        """
+
+        # If the problem mesh is structured
+        if self.mesh.structured:
+            dlmbd = []
+            # Constant element matrices
+            Ke = self.mesh.element.Ke(self.FEM.C_A, self.FEM.C_D, self.FEM.C_G)
+            Me = self.mesh.element.Me(self.FEM.materials[0], self.FEM.ho)
+
+            # Loop over every element
+            for ele, xe in zip(self.mesh.cells[self.mesh.contains[0]], X[self.mesh.contains[0]]):
+                Ve = np.array([])
+
+                # Get the displacement from the four nodes
+                for node in ele:
+                    Ve = np.append(Ve, self.v[self.FEM.N_dof * node:self.FEM.N_dof * node + self.FEM.N_dof])
+
+                # Objective function
+
+                # Sensibility to the Objective function
+                dlmbd.append(Ve.T @ (self.p * xe ** (self.p- 1) * Ke
+                                     - self.lmbd * self.q * xe ** (self.q-1) * Me) @ Ve)
+
+            return self.lmbd, dlmbd
 
     """
     Filters

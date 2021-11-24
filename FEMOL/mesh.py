@@ -457,9 +457,7 @@ def rectangle_Q4(Lx, Ly, nelx, nely):
     A function returning a structured rectangular 2D quadrilateral mesh
     """
     # Get the points and cells from meshzoo module
-    x_range = np.linspace(0, Lx, nelx+1)
-    y_range = np.linspace(0, Ly, nely+1)
-    points, cells = meshzoo.rectangle_quad(x_range, y_range)
+    points, cells = meshzoo.rectangle_quad((0, Lx), (0, Ly), (nelx, nely))
     cell_dict = {'quad': cells}
     mesh = Mesh(points, cell_dict, structured=True, quad_element=FEMOL.elements.Q4)
 
@@ -470,9 +468,7 @@ def rectangle_T3(Lx, Ly, nelx, nely):
     A function returning a structured rectangular 2D triangular mesh
     """
     # Get the points and cells from meshzoo module
-    x_range = np.linspace(0, Lx, nelx+1)
-    y_range = np.linspace(0, Ly, nely+1)
-    points, cells = meshzoo.rectangle_tri(x_range, y_range)
+    points, cells = meshzoo.rectangle_tri((0, Lx), (0, Ly), (nelx, nely))
     cell_dict = {'triangle': cells}
     mesh = Mesh(points, cell_dict, tri_element=FEMOL.elements.T3)
 

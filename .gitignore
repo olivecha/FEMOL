@@ -1,6 +1,7 @@
-/.pytest_cache/*
+.pytest_cache/*
+.ipynb_checkpoints/
+3D_print/*
+Figures/*
+Meshes/*
+.idea/*
 /.ipynb_checkpoints/
-/3D_print/*
-/Figures/*
-/Meshes/*
-/.idea/*
