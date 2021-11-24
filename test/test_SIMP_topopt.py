@@ -32,7 +32,7 @@ class MyTestCase(unittest.TestCase):
         force_domain = FEMOL.domains.inside_box([Lx], [[Ly / 2 - 1, Ly / 2 + 1]])
         plate_FEM.add_forces(force, force_domain)
 
-        topo_problem = FEMOL.TOPOPT_Problem(plate_FEM, volfrac=0.4, penal=3, method='SIMP')
+        topo_problem = FEMOL.TOPOPT_Problem(plate_FEM, volfrac=0.4, penal=3)
         mesh = topo_problem.solve(converge=0.03, max_loops=1, plot=False, save=False)
         X = np.array(list(mesh.cell_data['X'].values())).flatten()
         self.assertTrue(np.isclose(np.sum(X), mesh.N_ele*0.4, 1e-2))

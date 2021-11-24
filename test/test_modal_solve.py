@@ -16,7 +16,7 @@ class MyTestCase(unittest.TestCase):
 
         problem.add_forces(force=[0, 0, -1, 0, 0, 0], domain=FEMOL.domains.inside_box([[9, 11]], [[9, 11]]))
 
-        _, v = problem.solve(filtre=3)
+        _, v = problem.solve(filtre=1)
 
         self.assertTrue(np.allclose([vj.T @ problem.M @ vj for vj in v], 1))
 

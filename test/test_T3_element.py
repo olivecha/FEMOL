@@ -47,7 +47,7 @@ class MyTestCase(unittest.TestCase):
         Lx, Ly = 0.5, 0.25
         mesh = FEMOL.mesh.rectangle_T3(Lx, Ly, 1, 1)
 
-        problem = FEMOL.core.FEM_Problem('displacement', 'plane', mesh)
+        problem = FEMOL.FEM_Problem('displacement', 'plane', mesh)
         problem.define_materials(material)
         problem.define_tensors(thickness)
 

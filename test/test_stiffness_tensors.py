@@ -135,13 +135,13 @@ class MyTestCase(unittest.TestCase):
 
         material1 = FEMOL.materials.isotropic_bending_benchmark()
         t = 0.1
-        problem1 = FEMOL.core.FEM_Problem('displacement', 'plate', mesh)
+        problem1 = FEMOL.FEM_Problem('displacement', 'plate', mesh)
         problem1.define_materials(material1)
         problem1.define_tensors(t)
 
         material2 = FEMOL.materials.isotropic_laminate()
         layup = FEMOL.laminate.Layup(plies=[0] * 10, material=material2)
-        problem2 = FEMOL.core.FEM_Problem('displacement', 'plate', mesh)
+        problem2 = FEMOL.FEM_Problem('displacement', 'plate', mesh)
         problem2.define_materials(material2)
         problem2.define_tensors(layup)
 

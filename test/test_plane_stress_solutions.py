@@ -14,7 +14,7 @@ class MyTestCase(unittest.TestCase):
         n = 20
         Lx, Ly = 1, 1
         mesh = FEMOL.mesh.rectangle_Q4(Lx, Ly, n, n)
-        problem = FEMOL.core.FEM_Problem('displacement', 'plane', mesh)
+        problem = FEMOL.FEM_Problem('displacement', 'plane', mesh)
         material = FEMOL.materials.general_isotropic()
         problem.define_materials(material)
         problem.define_tensors(1)
@@ -49,7 +49,7 @@ class MyTestCase(unittest.TestCase):
         F = 0.5
 
         mesh = FEMOL.mesh.rectangle_Q4(20, 10, 60, 30)
-        problem = FEMOL.core.FEM_Problem('displacement', 'plane', mesh)
+        problem = FEMOL.FEM_Problem('displacement', 'plane', mesh)
         material = FEMOL.materials.general_isotropic()
         problem.define_materials(material)
         problem.define_tensors(thickness)
@@ -89,7 +89,7 @@ class MyTestCase(unittest.TestCase):
 
         Lx, Ly = 40, 2
         mesh = FEMOL.mesh.rectangle_Q4(Lx, Ly, n, m)
-        problem = FEMOL.core.FEM_Problem('displacement', 'plane', mesh)
+        problem = FEMOL.FEM_Problem('displacement', 'plane', mesh)
         material = FEMOL.materials.IsotropicMaterial(500, 0.3, 1)
         problem.define_materials(material)
         problem.define_tensors(thickness)
@@ -126,7 +126,7 @@ class MyTestCase(unittest.TestCase):
             material = FEMOL.materials.random_laminate_material()
             layup = FEMOL.laminate.Layup(material=material, plies=[0, -45, 90, 90, 45, 0])
 
-            problem = FEMOL.core.FEM_Problem('displacement', 'plane', mesh)
+            problem = FEMOL.FEM_Problem('displacement', 'plane', mesh)
             problem.define_materials(material)
             problem.define_tensors(layup)
 

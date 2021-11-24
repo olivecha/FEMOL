@@ -17,7 +17,7 @@ class MyTestCase(unittest.TestCase):
         F = 0.5
 
         mesh = FEMOL.mesh.rectangle_Q4(20, 10, 60, 30)
-        problem = FEMOL.core.FEM_Problem('displacement', 'plate', mesh)
+        problem = FEMOL.FEM_Problem('displacement', 'plate', mesh)
         material = FEMOL.materials.IsotropicMaterial(2, 0.3, 1)
         problem.define_materials(material)
         problem.define_tensors(thickness)
@@ -59,7 +59,7 @@ class MyTestCase(unittest.TestCase):
         material = FEMOL.materials.isotropic_bending_benchmark()
         t = 0.1
 
-        problem = FEMOL.core.FEM_Problem('displacement', 'plate', mesh)
+        problem = FEMOL.FEM_Problem('displacement', 'plate', mesh)
 
         problem.define_materials(material)
         problem.define_tensors(t)
@@ -94,7 +94,7 @@ class MyTestCase(unittest.TestCase):
         plies = [0, 90, 0, 90, 90]
         layup = FEMOL.laminate.Layup(material=material, plies=plies, symetric=True)
 
-        problem = FEMOL.core.FEM_Problem('displacement', 'plate', mesh)
+        problem = FEMOL.FEM_Problem('displacement', 'plate', mesh)
         problem.define_materials(material)
         problem.define_tensors(layup)
 
@@ -135,7 +135,7 @@ class MyTestCase(unittest.TestCase):
         THE_deflexion = 1000 * (P * L ** 3) / (48 * b) * layup.d_mat[0, 0]
 
         # FEM solution
-        problem = FEMOL.core.FEM_Problem('displacement', 'plate', mesh)
+        problem = FEMOL.FEM_Problem('displacement', 'plate', mesh)
         problem.define_materials(material)
         problem.define_tensors(layup)
 
