@@ -58,17 +58,22 @@ class FEM_Problem(object):
     """
 
     def plot(self):
+        # TODO : plot forces for 6 dof
         """
         Plots the current FEM Problem, (boundary conditions and applied forces)
         """
-        # TODO : plot forces for 6 dof
+
         fixed_dof_label_dict = {(0,): 'x displacement', (1,): 'y displacement', (2,): 'z displacement',
                                 (3,): 'x rotation', (4,): 'y rotation', (0, 1): 'x-y displacement',
-                                (2, 3): 'supported x', (2, 4): 'supported y', (0, 1, 2, 3, 4, 5): 'clamped', }
+                                (2, 3): 'supported x', (2, 4): 'supported y', (0, 1, 2, 3, 4, 5): 'clamped',}
+
+        single_dof_dict = {0: 'X', 1:'Y', 2:'Z', 3:'Tx', 4:'Ty', 5:'Tz'}
 
         fixed_dof_color_dict = {(0,): '#FF716A', (1,): '#FFBB6A', (2,): '#99FFA9',
                                 (3,): '#A0FF6A', (4,): '#6AFFDF', (0, 1): '#6A75FF',
                                 (2, 3): '#6A75FF', (2, 4): '#D26AFF', (0, 1, 2, 3, 4, 5): '#FF3A3A', }
+
+        single_dof_color = '#D8FF5E'
 
         # Display the mesh
         self.mesh.display()
@@ -78,8 +83,13 @@ class FEM_Problem(object):
         # Plot the fixed nodes and their degrees of freedom
         for domain, ddls in zip(self.fixed_domains, self.fixed_ddls):
             nodes = self.mesh.domain_nodes(domain)
-            label = fixed_dof_label_dict[tuple(ddls)]
-            color = fixed_dof_color_dict[tuple(ddls)]
+            try :
+                label = fixed_dof_label_dict[tuple(ddls)]
+                color = fixed_dof_color_dict[tuple(ddls)]
+            except KeyError:
+                label = 'DOFs : ' + ' '.join([single_dof_dict[d] for d in ddls])
+                color = single_dof_color
+
             plt.scatter(*self.mesh.points[nodes].T[:2], label=label, color=color, zorder=1)
 
         for force, domain in zip(self.forces, self.force_domains):
@@ -143,7 +153,7 @@ class FEM_Problem(object):
     Global Matrix Assembly
     """
 
-    def assemble(self, which, X=None, p=None):
+    def assemble(self, which, X=None, p=None, q=None):
         """
         General assembly function for the FEM Problem
 
@@ -159,7 +169,7 @@ class FEM_Problem(object):
         """
 
         if which == 'M':
-            self._assemble_M(X=X, p=p)
+            self._assemble_M(X=X, q=q)
 
         elif which == 'K':
             self.assemble('F')
@@ -394,14 +404,15 @@ class FEM_Problem(object):
         # Compute the data vector of the sparse matrix
         if self.mesh.structured:
             if self.coating:
-                # TODO : Test
                 data = self._K_structured_mesh_data_coating(X, p)
+
             elif not self.coating:
                 data = self._K_structured_mesh_data_base(X, p)
 
         elif not self.mesh.structured:
             if self.coating:
-                pass  # TODO
+                data = self._K_unstructured_mesh_data_coating(X, p)
+
             elif not self.coating:
                 data = self._K_unstructured_mesh_data_base(X, p)
 
@@ -411,7 +422,7 @@ class FEM_Problem(object):
                                          shape=(self.N_dof * self.mesh.N_nodes, self.N_dof * self.mesh.N_nodes))
         self.K.sum_duplicates()
 
-    def _assemble_M(self, X=None, p=None):
+    def _assemble_M(self, X=None, q=None):
         """
         sparse mass matrix assembly
         Parameters
@@ -423,17 +434,17 @@ class FEM_Problem(object):
         # Compute the data vector of the sparse matrix
         if self.mesh.structured:
             if self.coating:
-                pass
-                # TODO : Coating problem mass structured mass matrix data
+                data = self._M_structured_mesh_data_coat(X=X, q=q)
 
             elif not self.coating:
-                data = self._M_structured_mesh_data_base(X, p)
+                data = self._M_structured_mesh_data_base(X=X, q=q)
 
         elif not self.mesh.structured:
             if self.coating:
-                pass  # TODO : Coating problem mass unstructured mass matrix data
+                data = self._M_unstructured_mesh_data_coat(X=X, q=q)
+
             elif not self.coating:
-                data = self._M_unstructured_mesh_data_base(X, p)
+                data = self._M_unstructured_mesh_data_base(X=X, q=q)
 
         data = self._apply_boundary_conditions_to_matrix_data(data)
 
@@ -555,11 +566,61 @@ class FEM_Problem(object):
         data = np.append(data, np.ones(self.mesh.empty_nodes.shape[0] * self.N_dof))
         return data
 
+    def _K_unstructured_mesh_data_coating(self, X=None, p=None):
+        """
+               Computes the global K matrix data vector for an unstructured mesh
+               for the base material case
+
+               Returns
+               -------
+               d : the data vector to build the global stiffness matrix
+               """
+        # Empty data and element stiffness array
+        self.element_Ke_base = {'triangle': [], 'quad': []}
+        self.element_Ke_coat = {'triangle': [], 'quad': []}
+        data = np.array([])
+
+        # Case for a X vector
+        if X:
+            # Loop over the cell types in the mesh
+            for cell_type in self.mesh.contains:
+                # Loop over the cells
+                for cell, Xe in zip(self.mesh.cells[cell_type], X[cell_type]):
+                    # Create the element
+                    element = self.mesh.ElementClasses[cell_type](self.mesh.points[cell], self.N_dof)
+                    # Compute the element stiffness matrix
+                    Ke_base = element.Ke(self.C_A, self.C_D, self.C_G)
+                    Ke_coat = element.Ke(self.coat_C_A, self.coat_C_D, self.coat_C_G) * (Xe ** p)
+                    self.element_Ke_base[cell_type].append(Ke)
+                    self.element_Ke_coat[cell_type].append(Ke_coat)
+                    Ke = Ke_base.reshape(-1) + Ke_coat.reshape(-1)
+                    data = np.append(data, Ke)
+
+        # Case for no X vector
+        else:
+            # Loop over the cell types in the mesh
+            for cell_type in self.mesh.contains:
+                # Loop over the cells
+                for cell in self.mesh.cells[cell_type]:
+                    # Create the element
+                    element = self.mesh.ElementClasses[cell_type](self.mesh.points[cell], self.N_dof)
+                    # Compute the element stiffness matrix
+                    Ke_base = element.Ke(self.C_A, self.C_D, self.C_G)
+                    Ke_coat = element.Ke(self.coat_C_A, self.coat_C_D, self.coat_C_G)
+                    self.element_Ke_base[cell_type].append(Ke_base)
+                    self.element_Ke_coat[cell_type].append(Ke_coat)
+                    Ke = Ke_base.flatten() + Ke_coat.flatten()
+                    data = np.append(data, Ke)
+
+        data = np.append(data, np.ones(self.mesh.empty_nodes.shape[0] * self.N_dof))
+
+        return data
+
     """
     M Matrix Assembly Core Methods
     """
 
-    def _M_structured_mesh_data_base(self, X=None, p=None):
+    def _M_structured_mesh_data_base(self, X=None, q=None):
         """
         Creates the data vector to form the global mass matrix from
         a structured mesh where all the elements have the same dimensions
@@ -573,7 +634,7 @@ class FEM_Problem(object):
 
         else:
             X = X[self.mesh.contains[0]]
-            X = np.repeat(X, element.size ** 2) ** p
+            X = np.repeat(X, element.size ** 2) ** q
 
         # Element stiffness matrix data
         Me = element.Me(self.materials[0], self.ho)
@@ -581,7 +642,7 @@ class FEM_Problem(object):
 
         return data
 
-    def _M_unstructured_mesh_data_base(self, X=None, p=None):
+    def _M_unstructured_mesh_data_base(self, X=None, q=None):
         """
         Method creating the global mass matrix data vector from
         the element mass matrices for an unstructured mesh
@@ -598,7 +659,7 @@ class FEM_Problem(object):
                     # Create the element
                     element = self.mesh.ElementClasses[cell_type](self.mesh.points[cell], self.N_dof)
                     # Compute the element stiffness matrix
-                    Me = element.Me(self.materials[0], self.ho) * (Xe ** p)
+                    Me = element.Me(self.materials[0], self.ho) * (Xe ** q)
                     self.element_Me[cell_type].append(Me)
                     data = np.append(data, Me.reshape(-1))
 
@@ -616,6 +677,83 @@ class FEM_Problem(object):
 
         data = np.append(data, np.ones(self.mesh.empty_nodes.shape[0] * self.N_dof))
         return data
+
+    def _M_structured_mesh_data_coat(self, X=None, q=None):
+        """
+        Method computing the M global matrix data vector for
+        A structured mesh and a coating optimization problem
+
+        :param X: Density vector
+        :param q: Penalization exponent
+        :return: None
+        """
+        # Create an element from the mesh coordinates
+        element = self.mesh.element
+
+        if X is None:
+            X = 1
+
+        else:
+            X = X[self.mesh.contains[0]]
+            X = np.repeat(X, element.size ** 2) ** q
+
+        # Element stiffness matrix data
+        Me_base = element.Me(self.materials[0], self.ho)
+        Me_coat = element.Me(self.materials[1], self.coat_ho)
+        Me = np.tile(Me_base.flatten(), self.mesh.N_ele) + np.tile(Me_coat.flatten(), self.mesh.N_ele) * X
+        data = Me
+
+        return data
+
+    def _M_unstructured_mesh_data_coat(self, X=None, q=None):
+        """
+        Method computing the data vector of the sparse
+        mass matrix corresponding to the coating topology
+        optimization problem
+        :param X: Density vector
+        :param q: Penalization exponent
+        """
+        self.element_Me_base = {'triangle': [], 'quad': []}
+        self.element_Me_coat = {'triangle': [], 'quad': []}
+        data = np.array([])
+
+        # If a density vector is input
+        if X:
+            # For each type of cell in the mesh (tri, quad)
+            for cell_type in self.mesh.contains:
+                # For each cell corresponding to a cell type
+                for cell , Xe in zip(self.mesh.cells[cell_type], X[cell_type]):
+                    # Create an element
+                    element = self.mesh.ElementClasses[cell_type](self.mesh.points[cell], self.N_dof)
+                    # Compute the element mass matrices
+                    Me_base = element.Me(self.materials[0], self.ho)
+                    Me_coat = element.Me(self.materials[1], self.coat_ho)
+                    # Store as class attributes
+                    self.element_Me[cell_type].append(Me_base)
+                    self.element_Me_coat[cell_type].append(Me_coat)
+                    # Compute the actual element mass matrix and add to sparse matrix data
+                    Me = (Me_base + Me_coat  * Xe ** q).flatten()
+                    data = np.append(data, Me)
+        else:
+            # For each cell type in the mesh
+            for cell_type in self.mesh.contains:
+                # For each cell and Xe of a single cell type
+                for cell in self.mesh.cells[cell_type]:
+                    # Create an element instance
+                    element = self.mesh.ElementClasses[cell_type](self.mesh.points[cell], self.N_dof)
+                    # Compute the element mass matrices
+                    Me_base = element.Me(self.materials[0], self.ho)
+                    Me_coat = element.Me(self.materials[1], self.coat_ho)
+                    # Store the in the attributes
+                    self.element_Me_base[cell_type].append(Me_base)
+                    self.element_Me_coat[cell_type].append(Me_coat)
+                    # Compute the complete Me
+                    Me = (Me_base + Me_coat).flatten()
+                    # add to data
+                    data = np.append(data, Me)
+
+        return data
+
 
     """
     Method for boundary conditions

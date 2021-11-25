@@ -573,34 +573,7 @@ class Q4(object):
 
             return Me
 
-        """
-        Plate bending
-        # GDof, numberElements, elementNodes, numberNodes, nodeCoordinates, thickness, rho, I
-        # computation of mass matrix for Mindlin plate element, mass: mass matrix
-        Me = 0 zeros(GDof);
-        # Gauss quadrature for bending part
-        [gaussWeights, gaussLocations] = gaussQuadrature(’complete’);
-        # cycle for element
-            for e=1:numberElements
-            % indice: nodal
-            condofectivities
-            for each element
-                indice = elementNodes(e,:);
-                ndof = length(indice);
-                % cycle
-                for Gauss point
-                    for q=1:size(gaussWeights, 1)
-                GaussPoint = gaussLocations(q,:);
-                xi = GaussPoint(1);
-                eta = GaussPoint(2);
-            % shape
-            functions and derivatives
-            [shapeFunction, naturalDerivatives] = shapeFunctionQ4(xi, eta)
-            % Jacobian
-            matrix, inverse
-            of
-            Jacobian,
-        """
+
 
 # TODO : Complete the Q8 element
 class Q8(object):
