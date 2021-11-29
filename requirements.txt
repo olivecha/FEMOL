@@ -3,8 +3,5 @@ scipy
 matplotlib
 meshio
 meshzoo == 0.8.0
-pyvista
-pygmsh
-gif
 IPython
 pytest

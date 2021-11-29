@@ -36,8 +36,8 @@ class MyTestCase(unittest.TestCase):
 
         mesh = plate_FEM.solve()
 
-        topo_problem = FEMOL.TOPOPT_Problem(plate_FEM, volfrac=0.4, penal=3)
-        mesh = topo_problem.solve(converge=0.03, max_loops=1, plot=False, save=False)
+        topo_problem = FEMOL.SIMP_COMP(plate_FEM, volfrac=0.4, penal=3)
+        mesh = topo_problem.solve(converge=0.03, max_iter=1, plot=False, save=False)
         mesh.save('temp')
         mesh2 = FEMOL.mesh.load_vtk('temp.vtk')
         os.remove('temp.vtk')
