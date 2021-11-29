@@ -1,13 +1,11 @@
 import numpy as np
 import meshio
 import meshzoo
-import pygmsh
-import gif
 import matplotlib.pyplot as plt
 import matplotlib.tri as tri
 import FEMOL.elements
 # Configuration
-gif.options.matplotlib["dpi"] = 150
+
 
 class Mesh(object):
     """
@@ -269,27 +267,6 @@ class Mesh(object):
         all_cell_centers = [self.cell_centers[cell_type] for cell_type in self.contains]
         self.all_cell_centers = np.array([center for center_list in all_cell_centers for center in center_list])
 
-    def optimization_to_gif(self):
-        """
-        Creates a gif from the optimization result
-        """
-        keys = self._get_Xi_keys()
-
-        @gif.frame
-        def plot_frame(key):
-            self.plot.cell_data(key)
-
-        frames = []
-        for key in keys:
-            frame = plot_frame(key)
-            frames.append(frame)
-
-        path = 'results/TOPOPT/gifs/'
-        gif_name = path + 'topopt_' + FEMOL.utils.unique_time_string() + '.gif'
-        fps = 20  # frames/s
-
-        gif.save(frames, gif_name, duration=len(frames)/fps, unit="s", between="startend")
-
     def _get_Xi_keys(self):
         """
         Generates the array containing all the density iterations of the topology
@@ -509,28 +486,15 @@ def rectangle_T3(Lx, Ly, nelx, nely):
 
     return mesh
 
-def circle_Q4(R, N_ele, which='meshzoo'):
+def circle_Q4(R, N_ele):
     """
     Function returning a circular mesh with quadrilaterals
     meshzoo : Ordered mesh from meshzoo
     pygmsh : Generated mesh from pygmsh
     """
-    if which == 'meshzoo':
-        # Use meshzoo for simple meshes
-        points, cells = meshzoo.disk_quad(N_ele)
-        cells_dict = {'quad': cells}
-        # Create a mesh with the Q4 elements (circle with quads is not a good quality mesh)
-        mesh = FEMOL.Mesh(points * (R / (np.sqrt(2) / 2)), cells_dict, quad_element=FEMOL.elements.Q4)
-        return mesh
-
-    elif which == 'pygmsh':
-        mesh_size = R/(N_ele/2)
-        with pygmsh.geo.Geometry() as geom:
-            circle = geom.add_circle([0.0, 0.0], R, mesh_size=mesh_size, make_surface=False)
-            loop = geom.add_curve_loop(circle.curve_loop.curves)
-            surf = geom.add_surface(loop)
-            geom.set_recombined_surfaces([surf])
-            mesh_p = geom.generate_mesh(dim=2, algorithm=0)
-
-        mesh = FEMOL.Mesh(mesh_p.points, mesh_p.cells_dict, quad_element=FEMOL.elements.Q4)
-        return mesh
+    # Use meshzoo for simple meshes
+    points, cells = meshzoo.disk_quad(N_ele)
+    cells_dict = {'quad': cells}
+    # Create a mesh with the Q4 elements (circle with quads is not a good quality mesh)
+    mesh = FEMOL.Mesh(points * (R / (np.sqrt(2) / 2)), cells_dict, quad_element=FEMOL.elements.Q4)
+    return mesh

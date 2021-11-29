@@ -53,10 +53,6 @@ class FEM_Problem(object):
         self.force_domains = []
         self.F = np.zeros(self.N_dof * self.mesh.N_nodes)
 
-    """
-    Defining the problem
-    """
-
     def plot(self):
         # TODO : plot forces for 6 dof
         """
