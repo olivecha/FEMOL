@@ -2,7 +2,6 @@ import numpy as np
 import meshio
 import meshzoo
 import pygmsh
-import pyvista as pv
 import gif
 import matplotlib.pyplot as plt
 import matplotlib.tri as tri
@@ -28,6 +27,8 @@ class Mesh(object):
         self.cell_centers = {}
         # Store the cells and points into the Mesh instance
         self.cells = cell_dict
+        if points.shape[1] == 2:
+            points = np.hstack([points, np.zeros((points.shape[0],1))])
         self.points = points
         # Get if the mesh contains triangles, quads or both
         self.contains = [key for key in cell_dict if key in ['triangle', 'quad']]
@@ -81,9 +82,28 @@ class Mesh(object):
                     y = cell_points.T[1]
                     ax.fill(x, y, color, edgecolor='k', zorder=-1)
 
-    # TODO : Use meshio to save the mesh with all the data
     def save(self, file):
-        pass
+        """
+        Save the mesh to VTK format using meshio
+        :param file: filename
+        :return: None
+        """
+        new_cell_data = {}
+        for data in self.cell_data:
+            new_data = []
+            for cell_type in self.contains:
+                new_data.append(self.cell_data[data][cell_type])
+            new_cell_data[data] = new_data
+
+        meshio_mesh = meshio.Mesh(
+            self.points,
+            self.cells,
+            # Optionally provide extra data on points, cells, etc.
+            point_data=self.point_data,
+            # Each item in cell data must match the cells array
+            cell_data=new_cell_data)
+
+        meshio_mesh.write(file + '.vtk')
 
     def domain_nodes(self, domain):
         """
@@ -147,7 +167,7 @@ class Mesh(object):
         """
         # Exact for structured meshes
         if self.structured:
-            x, y = self.points[self.cells[self.contains[0]][0]].T
+            x, y = self.points[self.cells[self.contains[0]][0]].T[:2]
             x_size = x.max() - x.min()
             y_size = y.min() - y.max()
             ele_size = np.max([x_size, y_size])
@@ -444,9 +464,24 @@ class MeshPlot(object):
 Mesh manipulation
 """
 
-# TODO : Load a arbitrary mesh into FEMOL Mesh
-def load():
-    pass
+def load_vtk(file):
+    """
+    Load a vtk mesh with meshio and convert it to FEMOL mesh
+    :param file: filepath
+    :return: FEMOL mesh
+    """
+    meshio_mesh = meshio.read(file)
+    femol_mesh = Mesh(meshio_mesh.points, meshio_mesh.cells_dict)
+    femol_mesh.point_data = meshio_mesh.point_data
+    cell_data = meshio_mesh.cell_data
+    new_cell_data = {}
+    for data in cell_data:
+        new_data = {}
+        for i, cell_type in enumerate(femol_mesh.contains):
+            new_data[cell_type] = cell_data[data][i]
+        new_cell_data[data] = new_data
+    femol_mesh.cell_data = new_cell_data
+    return femol_mesh
 
 """
 Pre defined Meshes

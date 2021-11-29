@@ -96,7 +96,7 @@ class TOPOPT_Problem(object):
                 # adding the results to the mesh
                 X_key = 'X{}'.format(self.loop)
                 self.mesh.cell_data[X_key] = self.X
-                self.mesh.point_data['U{}'.format(self.loop)] = self.U
+                self.mesh.add_mode('d{}'.format(self.loop), self.U, self.FEM.N_dof)
 
                 # animation
                 if plot:
@@ -123,12 +123,12 @@ class TOPOPT_Problem(object):
             if save:
                 # Try saving the file in results
                 try:
-                    filename = 'results/TOPOPT/arrays/topopt_' + FEMOL.utils.unique_time_string()
-                    np.save(filename, np.array(self.X))
+                    filename = 'Results/_topopt_cache/TOM_' + FEMOL.utils.unique_time_string()
+                    self.mesh.save(filename)
                 # If it does not work save it here
                 except FileNotFoundError:
-                    filename = 'topopt_' + FEMOL.utils.unique_time_string()
-                    np.save(filename, np.array(self.X))
+                    filename = 'TOM_' + FEMOL.utils.unique_time_string()
+                    self.mesh.save(filename)
 
             return self.mesh
 

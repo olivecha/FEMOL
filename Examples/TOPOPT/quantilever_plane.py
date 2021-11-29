@@ -33,7 +33,7 @@ mesh = plate_FEM.solve()
 
 mesh.plot.point_data('Uy')
 
-topo_problem = FEMOL.TOPOPT_Problem(plate_FEM, volfrac=0.4, penal=3, method='SIMP')
+topo_problem = FEMOL.TOPOPT_Problem(plate_FEM, volfrac=0.4, penal=3)
 mesh = topo_problem.solve(converge=0.03, max_loops=20, plot=False, save=False)
 
 mesh.plot.cell_data('X')
