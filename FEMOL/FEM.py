@@ -587,7 +587,7 @@ class FEM_Problem(object):
                     # Compute the element stiffness matrix
                     Ke_base = element.Ke(self.C_A, self.C_D, self.C_G)
                     Ke_coat = element.Ke(self.coat_C_A, self.coat_C_D, self.coat_C_G) * (Xe ** p)
-                    self.element_Ke_base[cell_type].append(Ke)
+                    self.element_Ke_base[cell_type].append(Ke_base)
                     self.element_Ke_coat[cell_type].append(Ke_coat)
                     Ke = Ke_base.reshape(-1) + Ke_coat.reshape(-1)
                     data = np.append(data, Ke)

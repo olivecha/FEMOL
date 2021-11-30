@@ -96,10 +96,13 @@ class SIMP_COMP(object):
         clear_output(wait=True)
         N = int(np.sqrt(self.mesh.N_ele))
         try:
-            X_plot = self.mesh.cell_data['X']
-            X_plot = np.hstack([X_plot[cell_type] for cell_type in self.mesh.contains])
-            X_plot = X_plot.reshape(N, N)
-            plt.imshow(np.flip(X_plot, 0), cmap='Greys')
+            if self.mesh.structured:
+                X_plot = self.mesh.cell_data['X']
+                X_plot = np.hstack([X_plot[cell_type] for cell_type in self.mesh.contains])
+                X_plot = X_plot.reshape(N, N)
+                plt.imshow(np.flip(X_plot, 0), cmap='Greys')
+            else:
+                raise ValueError
         except ValueError:
             self.mesh.plot.cell_data('X')
         ax = plt.gca()
@@ -203,7 +206,6 @@ class SIMP_COMP(object):
 
             return c, dc
 
-        # TODO : Fix
         elif not self.mesh.structured:
             # initiate the objective function values
             c = 0
@@ -211,22 +213,21 @@ class SIMP_COMP(object):
 
             # Loop over every element nodes, density, element stiffness matrix
             for cell_type in self.mesh.contains:
-                for ele, xe, Ke in zip(self.mesh.cells[cell_type], X[cell_type], self.FEM.element_Ke[cell_type]):
+                for ele, xe, Ke_base, Ke_coat in zip(self.mesh.cells[cell_type], X[cell_type],
+                                                     self.FEM.element_Ke_base[cell_type],
+                                                     self.FEM.element_Ke_coat[cell_type]):
                     # Empty element displacement array
                     Ue = np.array([])
-
                     # Get the displacement from the element nodes
                     for node in ele:
                         I1 = int(self.FEM.N_dof * node)
                         I2 = int(self.FEM.N_dof * node + self.FEM.N_dof)
                         Ue = np.append(Ue, self.U[I1:I2])
-
                     # Objective function
-                    c += xe ** self.p * Ue.transpose() @ Ke @ Ue
-
+                    Ke = Ke_base + Ke_coat * (xe ** self.p)
+                    c += Ue.transpose() @ Ke @ Ue
                     # Sensibility to the Objective function
-                    dc = np.append(dc, -self.p * xe ** (self.p - 1) * Ue.transpose() @ Ke @ Ue)
-
+                    dc = np.append(dc, -self.p * xe ** (self.p - 1) * Ue.T @ Ke_coat @ Ue)
             return c, dc
 
     def _filter_sensibility(self, X):
@@ -374,7 +375,6 @@ class SIMP_VIBE(object):
         self.X = {key: np.ones(self.mesh.cells[key].shape[0]) * volfrac for key in self.mesh.contains}
         self.lmbds = []
 
-
     def solve(self, v_ref,  converge=0.01, max_iter=100, plot=True, save=True):
         """
                SIMP Optimization solver
@@ -458,33 +458,39 @@ class SIMP_VIBE(object):
     def _get_new_x(self, X):
         l1 = 0
         l2 = 100000
-        move = 0.5
+        move = 0.3
         # Flatten the X array
         X = np.hstack([X[cell_type] for cell_type in self.mesh.contains])
 
+	# Find the lagrange multiplier
         while (l2 - l1) > 1e-4:
+	    # Bijection algorith
             lmid = 0.5 * (l1 + l2)
-
+	    # Move by an increment
             X1 = X + move
-            X2 = X * (np.abs(self.dlmbd) / lmid) ** 0.3
-
+	    # Multiply by the sensibility
+            X2 = X * (np.max([np.zeros(self.mesh.N_ele), self.dlmbd]) / lmid) ** 0.3
+	    # Take the min between move and sensibilities
             X_new = np.min([X1, X2], axis=0)
+	    # Remove value higher than one
             X_new = np.min([np.ones(self.mesh.N_ele), X_new], axis=0)
+	    # Do a negative move
             X_new = np.max([X - move, X_new], axis=0)
             # Remove the values lower than the threshold
             X_new = np.max([0.001 * np.ones(self.mesh.N_ele), X_new], axis=0)
 
+	    # Add matter where the domain is constrained to be solid
             if hasattr(self, 'solid_domain'):
                 X_new = self._apply_solid_domain(self.solid_domain, X_new)
-
+	    # Remove matter where the domain is constrained to be void
             if hasattr(self, 'void_domain'):
                 X_new = self._apply_void_domain(self.void_domain, X_new)
-
+	    # Do the bijection
             if (np.sum(X_new) - self.f * self.mesh.N_ele) > 0:
                 l1 = lmid
             else:
                 l2 = lmid
-
+	    # Reshape X into a cell dict
             X_new = np.split(X_new, [self.mesh.cells[self.mesh.contains[0]].shape[0]])
             X_new = {key: Xi for (key, Xi) in zip(self.mesh.contains, X_new)}
 
@@ -598,35 +604,27 @@ class SIMP_VIBE(object):
                                      - self.lmbd * self.q * xe ** (self.q-1) * Me) @ Ve)
 
             return self.lmbd, np.array(dlmbd)
+        
+        # If the mesh is not structured
+        if not self.mesh.structured:
 
-    def _solid_min_eigs_objective_function(self, X):
-        """
-        Minimize eigenvalue objective function
-        """
-        # For minimization
-        self.lmbd *= -1
-        # If the problem mesh is structured
-        if self.mesh.structured:
             dlmbd = []
-            # Constant element matrices
-            Ke = self.mesh.element.Ke(self.FEM.C_A, self.FEM.C_D, self.FEM.C_G)
-            Me = self.mesh.element.Me(self.FEM.materials[0], self.FEM.ho)
+            for cell_type in self.mesh.contains:
+                for ele, xe, Ke, Me in zip(self.mesh.cells[cell_type], X[cell_type],
+                                           self.FEM.element_Ke, self.FEM.element_Me):
+                    # Empty localized eigenvector
+                    Ve = np.array([])
+                    # Add the component according to the element nodes
+                    for node in ele:
+                        Ve = np.append(Ve, self.v[self.FEM.N_dof*node:self.FEM.N_dof*node+self.FEM.N_dof])
 
-            # Loop over every element
-            for ele, xe in zip(self.mesh.cells[self.mesh.contains[0]], X[self.mesh.contains[0]]):
-                Ve = np.array([])
-
-                # Get the displacement from the four nodes
-                for node in ele:
-                    Ve = np.append(Ve, self.v[self.FEM.N_dof * node:self.FEM.N_dof * node + self.FEM.N_dof])
-
-                # Objective function
-
-                # Sensibility to the Objective function
-                dlmbd.append(Ve.T @ (self.p * xe ** (self.p - 1) * Ke
-                                     - self.lmbd * self.q * xe ** (self.q - 1) * Me) @ Ve)
+                    dlmbd.append(Ve.T @ (self.p * xe ** (self.p - 1) * Ke
+                                     - self.lmbd * self.q * xe ** (self.q-1) * Me) @ Ve)
 
             return self.lmbd, np.array(dlmbd)
+
+    def _solid_min_eigs_objective_function(self, X):
+        raise NotImplementedError
 
     def _coating_max_eigs_objective_function(self, X):
         raise NotImplementedError
