@@ -18,7 +18,7 @@ def optimization_to_gif(mesh):
         frame = plot_frame(key)
         frames.append(frame)
 
-    path = 'results/TOPOPT/gifs/'
+    path = ''
     gif_name = path + 'topopt_' + FEMOL.utils.unique_time_string() + '.gif'
     fps = 20  # frames/s
 

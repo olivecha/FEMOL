@@ -125,6 +125,56 @@ class SIMP_COMP(object):
         U = self.FEM.solve(verbose=False).U
         return U
 
+    def _solid_compliance_objective_function(self, X):
+        """
+        Minimize compliance objective function for a solid part problem
+        """
+        if self.mesh.structured:
+            c = 0
+            dc = np.array([])
+            Ke = self.mesh.element.Ke(self.FEM.C_A, self.FEM.C_D, self.FEM.C_G)
+
+            # Loop over every element
+            for ele, xe in zip(self.mesh.cells[self.mesh.contains[0]], X[self.mesh.contains[0]]):
+                Ue = np.array([])
+
+                # Get the displacement from the four nodes
+                for node in ele:
+                    Ue = np.append(Ue, self.U[self.FEM.N_dof * node:self.FEM.N_dof * node + self.FEM.N_dof])
+
+                # Objective function
+                c += xe ** self.p * Ue.transpose() @ Ke @ Ue
+
+                # Sensibility to the Objective function
+                dc = np.append(dc, -self.p * xe ** (self.p - 1) * Ue.transpose() @ Ke @ Ue)
+
+            return c, dc
+
+        elif not self.mesh.structured:
+            # initiate the objective function values
+            c = 0
+            dc = np.array([])
+
+            # Loop over every element nodes, density, element stiffness matrix
+            for cell_type in self.mesh.contains:
+                for ele, xe, Ke in zip(self.mesh.cells[cell_type], X[cell_type], self.FEM.element_Ke[cell_type]):
+                    # Empty element displacement array
+                    Ue = np.array([])
+
+                    # Get the displacement from the element nodes
+                    for node in ele:
+                        I1 = int(self.FEM.N_dof * node)
+                        I2 = int(self.FEM.N_dof * node + self.FEM.N_dof)
+                        Ue = np.append(Ue, self.U[I1:I2])
+
+                    # Objective function
+                    c += xe ** self.p * Ue.transpose() @ Ke @ Ue
+
+                    # Sensibility to the Objective function
+                    dc = np.append(dc, -self.p * xe ** (self.p - 1) * Ue.transpose() @ Ke @ Ue)
+
+            return c, dc
+
     def _coating_compliance_objective_function(self, X):
         """
         Only works for structured mesh
@@ -154,56 +204,6 @@ class SIMP_COMP(object):
             return c, dc
 
         # TODO : Fix
-        elif not self.mesh.structured:
-            # initiate the objective function values
-            c = 0
-            dc = np.array([])
-
-            # Loop over every element nodes, density, element stiffness matrix
-            for cell_type in self.mesh.contains:
-                for ele, xe, Ke in zip(self.mesh.cells[cell_type], X[cell_type], self.FEM.element_Ke[cell_type]):
-                    # Empty element displacement array
-                    Ue = np.array([])
-
-                    # Get the displacement from the element nodes
-                    for node in ele:
-                        I1 = int(self.FEM.N_dof * node)
-                        I2 = int(self.FEM.N_dof * node + self.FEM.N_dof)
-                        Ue = np.append(Ue, self.U[I1:I2])
-
-                    # Objective function
-                    c += xe ** self.p * Ue.transpose() @ Ke @ Ue
-
-                    # Sensibility to the Objective function
-                    dc = np.append(dc, -self.p * xe ** (self.p - 1) * Ue.transpose() @ Ke @ Ue)
-
-            return c, dc
-
-    def _solid_compliance_objective_function(self, X):
-        """
-        Minimze compliance objective function for a solid part problem
-        """
-        if self.mesh.structured:
-            c = 0
-            dc = np.array([])
-            Ke = self.mesh.element.Ke(self.FEM.C_A, self.FEM.C_D, self.FEM.C_G)
-
-            # Loop over every element
-            for ele, xe in zip(self.mesh.cells[self.mesh.contains[0]], X[self.mesh.contains[0]]):
-                Ue = np.array([])
-
-                # Get the displacement from the four nodes
-                for node in ele:
-                    Ue = np.append(Ue, self.U[self.FEM.N_dof * node:self.FEM.N_dof * node + self.FEM.N_dof])
-
-                # Objective function
-                c += xe ** self.p * Ue.transpose() @ Ke @ Ue
-
-                # Sensibility to the Objective function
-                dc = np.append(dc, -self.p * xe ** (self.p - 1) * Ue.transpose() @ Ke @ Ue)
-
-            return c, dc
-
         elif not self.mesh.structured:
             # initiate the objective function values
             c = 0
@@ -340,9 +340,9 @@ class SIMP_VIBE(object):
     for topology optimization of the modal behavior
     _________________________________________________
     Supported objective functions:
-    'max eigs': Fundamental eigenvalue maximization
+    'max eig': Fundamental eigenvalue maximization
     """
-    def __init__(self, Problem, volfrac=0.5, p=3, q=1, rmin=1.5, objective='max eigs'):
+    def __init__(self, Problem, volfrac=0.5, p=3, q=1, rmin=1.5, objective='max eig'):
         """
         Constructor for the Topology Optimisation Problem
         Problem: FEMOL FEM Problem instance
@@ -354,7 +354,9 @@ class SIMP_VIBE(object):
         """
         MAX_EIG = {'solid': self._solid_max_eigs_objective_function,
                    'coating': self._coating_max_eigs_objective_function}
-        OBJECTIVE_FUNS = {'max eigs': MAX_EIG, }
+        MIN_EIG = {'solid': self._solid_min_eigs_objective_function}
+        OBJECTIVE_FUNS = {'max eig': MAX_EIG,
+                          'min eig': MIN_EIG}
 
         # store the problem parameters
         self.FEM = Problem
@@ -370,6 +372,8 @@ class SIMP_VIBE(object):
         self.p = p
         self.q = q
         self.X = {key: np.ones(self.mesh.cells[key].shape[0]) * volfrac for key in self.mesh.contains}
+        self.lmbds = []
+
 
     def solve(self, v_ref,  converge=0.01, max_iter=100, plot=True, save=True):
         """
@@ -392,6 +396,7 @@ class SIMP_VIBE(object):
             # Iteration
             X_old = self.X
             self.lmbd, self.v = self.FEM_solver(X_old, v_ref=v_ref)
+            self.lmbds.append(self.lmbd)
             self.lmbd, self.dlmbd = self.objective_function(X_old)
             self._filter_sensibility(X_old)
             self.X = self._get_new_x(X_old)
@@ -412,8 +417,9 @@ class SIMP_VIBE(object):
             if plot:
                 self._plot_iteration()
             else:
-                clear_output(wait=True)
-                info = "Iteration : " + str(self.loop) + ', variation : ' + str(np.around(self.change * 100, 1))
+                info = 'Iteration : {it}, Variation : {va}, EigenVal : {eg}'.format(it = self.loop,
+                                                                                    va = self.change,
+                                                                                    eg = self.lmbd)
                 print(info)
 
         if save:
@@ -460,7 +466,7 @@ class SIMP_VIBE(object):
             lmid = 0.5 * (l1 + l2)
 
             X1 = X + move
-            X2 = X * (self.dlmbd / lmid) ** 0.3
+            X2 = X * (np.abs(self.dlmbd) / lmid) ** 0.3
 
             X_new = np.min([X1, X2], axis=0)
             X_new = np.min([np.ones(self.mesh.N_ele), X_new], axis=0)
@@ -590,6 +596,35 @@ class SIMP_VIBE(object):
                 # Sensibility to the Objective function
                 dlmbd.append(Ve.T @ (self.p * xe ** (self.p - 1) * Ke
                                      - self.lmbd * self.q * xe ** (self.q-1) * Me) @ Ve)
+
+            return self.lmbd, np.array(dlmbd)
+
+    def _solid_min_eigs_objective_function(self, X):
+        """
+        Minimize eigenvalue objective function
+        """
+        # For minimization
+        self.lmbd *= -1
+        # If the problem mesh is structured
+        if self.mesh.structured:
+            dlmbd = []
+            # Constant element matrices
+            Ke = self.mesh.element.Ke(self.FEM.C_A, self.FEM.C_D, self.FEM.C_G)
+            Me = self.mesh.element.Me(self.FEM.materials[0], self.FEM.ho)
+
+            # Loop over every element
+            for ele, xe in zip(self.mesh.cells[self.mesh.contains[0]], X[self.mesh.contains[0]]):
+                Ve = np.array([])
+
+                # Get the displacement from the four nodes
+                for node in ele:
+                    Ve = np.append(Ve, self.v[self.FEM.N_dof * node:self.FEM.N_dof * node + self.FEM.N_dof])
+
+                # Objective function
+
+                # Sensibility to the Objective function
+                dlmbd.append(Ve.T @ (self.p * xe ** (self.p - 1) * Ke
+                                     - self.lmbd * self.q * xe ** (self.q - 1) * Me) @ Ve)
 
             return self.lmbd, np.array(dlmbd)
 
