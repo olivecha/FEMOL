@@ -4,7 +4,7 @@ import numpy as np
 
 class MyTestCase(unittest.TestCase):
 
-    def test_in_plane_disk_eigenvalues(self):
+    def test_in_plane_disk_eigenvalues_quads(self):
         """
         Test cas with reference solution of in plane vibration
         natural frequencies of a clamped circular plate
@@ -45,6 +45,34 @@ class MyTestCase(unittest.TestCase):
 
         # Assert the difference between the eigen values is lower than 1%
         self.assertTrue((np.array(relative_difference) < 1).all())
+
+    def test_in_plane_disk_eigenvalues_triangles(self):
+        """
+        Example with reference solution
+
+        Reference values taken from :
+        Park, C. I. (2008). Frequency equation for the in-plane vibration of a clamped circular plate.
+        Journal of Sound and Vibration, 313(1‑2), 325‑333. https://doi.org/10.1016/j.jsv.2007.11.034
+        """
+        # Reference eigenvalues (Hz) (Park, C. I. (2008)).
+        REF_W = np.array([3363.6, 3836.4, 5217.5, 5380.5,
+                          6624, 6749.3, 6929, 7019.3, 8093,
+                          8476.5, 8530.6, 9258, 9328.1, 9887.7])
+        R = 0.5  # m
+        N_ele = 10
+        mesh = FEMOL.mesh.circle_T3(R, N_ele)
+        thickness = 0.005
+        aluminium = FEMOL.materials.IsotropicMaterial(71e9, 0.33, 2700)
+        problem = FEMOL.FEM_Problem(mesh=mesh, physics='modal', model='plane')
+        problem.define_materials(aluminium)
+        problem.define_tensors(thickness)
+        circle_domain = FEMOL.domains.outside_circle(0, 0, R - 0.005)
+        problem.add_fixed_domain(circle_domain)
+        w, v = problem.solve(filtre=2)
+        FEM_W = np.around(w, 1)
+        DIFF = (FEM_W[:14] - REF_W)
+        MEAN = 0.5 * ((FEM_W[:14] + REF_W))
+        self.assertTrue(((100 * DIFF / MEAN)[:6] < 2).all())
 
     def test_supported_square_plate_eigenvalues(self):
         """
@@ -107,7 +135,6 @@ class MyTestCase(unittest.TestCase):
         # Test that the error is below 4%
         self.assertTrue(((100*np.abs(REF_W - FEM_W) / REF_W) < 4).all()
 )
-
 
 if __name__ == '__main__':
     unittest.main()

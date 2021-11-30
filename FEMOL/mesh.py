@@ -496,5 +496,23 @@ def circle_Q4(R, N_ele):
     points, cells = meshzoo.disk_quad(N_ele)
     cells_dict = {'quad': cells}
     # Create a mesh with the Q4 elements (circle with quads is not a good quality mesh)
-    mesh = FEMOL.Mesh(points * (R / (np.sqrt(2) / 2)), cells_dict, quad_element=FEMOL.elements.Q4)
+    mesh = Mesh(points * (R / (np.sqrt(2) / 2)), cells_dict, quad_element=FEMOL.elements.Q4)
+    return mesh
+
+def circle_T3(R, N_ele, order=7):
+    """
+    Function returning a circular mesh with quadrilaterals
+    R: Circle radius
+    N_ele: Number of elements on the radius
+    order: Source polygon for the inflation
+    Taken from: https://github.com/nschloe/meshzoo
+    """
+    # Use meshzoo for simple meshes
+    points, cells = meshzoo.disk(order, N_ele)
+    cells_dict = {'triangle': cells}
+    # Create a mesh with the T3 elements
+    mesh = Mesh(points, cells_dict,  tri_element=FEMOL.elements.T3)
+    # Scale the points
+    mesh.points *= R
+
     return mesh
