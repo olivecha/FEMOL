@@ -10,6 +10,9 @@ class T3(object):
     """
     # Number of nodes of the element
     N_nodes = 3
+    # 1st order gauss integration points
+    integration_points_2 = [(1/3, 1/3), (1/5, 1/5), (3/5, 1/5), (1/5, 3/5)]
+    integration_weights_2 = [-27/96, 25/96, 25/96, 25/96]
 
     # shape functions and derivatives
     @staticmethod
@@ -29,7 +32,7 @@ class T3(object):
         dN_deta = np.array([-1, 0, 1])
         return dN_deta
 
-    def __init__(self, points, N_dof):
+    def __init__(self, points, N_dof=2):
         """
         Constructor for the T3 element
         Parameters
@@ -68,6 +71,16 @@ class T3(object):
         T = np.array([T1, T2, T3])
         Q = np.sum(np.abs(T - (np.pi/3)))
         return Q
+
+    def plot(self):
+        """
+        Plots the element using matplotlib
+        """
+        ax = plt.gca()
+        ax.scatter(self.x, self.y, color='k')
+        ax.plot(self.x[[0, 1]], self.y[[0, 1]], color='k')
+        ax.plot(self.x[[1, 2]], self.y[[1, 2]], color='k')
+        ax.plot(self.x[[2, 0]], self.y[[2, 0]], color='k')
 
     def J(self):
         """
@@ -110,6 +123,29 @@ class T3(object):
         dN_dy = j[1, 0] * self.dshape_dxi() + j[1, 1] * self.dshape_deta()
         return dN_dy
 
+    def make_shape_xy(self):
+        """
+        Computes the element shape functions in respect to XY
+        """
+        xi, xj, xk = self.x[:3]
+        yi, yj, yk = self.y[:3]
+
+        def N1(x, y):
+            return 1/(2 * self.area()) * ((yk - yj) * (xj - x) - (xk - xj) * (yj - y))
+
+        def N2(x, y):
+            return 1/(2 * self.area()) * ((yi - yk) * (xk - x) - (xi - xk) * (yk - y))
+
+        def N3(x, y):
+            return 1/(2 * self.area()) * ((yj - yi) * (xi - x) - (xj - xi) * (yi - y))
+
+        def N(x, y):
+            I = np.eye(self.N_dof)
+            result = np.hstack([I * N1(x, y), I * N2(x, y), I * N3(x, y)])
+            return result
+
+        self.shape_xy = N
+
     def plane_B_matrix(self):
         """
         Computes the plane-stress strain matrix according to given generalized coordinates (xi, eta)
@@ -150,8 +186,7 @@ class T3(object):
         -------
         Ke : The element stiffness matrix
         """
-
-        # plane-stress case
+        # Only works for plane stress
         if self.N_dof == 2:
             Ke = 0
             C = tensors[0]
@@ -160,6 +195,41 @@ class T3(object):
             Ke += self.area() * (B.T @ C @ B)
 
             return Ke
+
+    def Me(self, material, thickness):
+        """
+        Method returning the element mass matrix from the element material
+        Parameters
+        ----------
+        material : A material class instance with a density attribute
+        thickness : The element thickness
+        Returns
+        -------
+        Me : The element mass matrix according to the nodes degrees of freedom
+        """
+        # Plane stress case
+        if self.N_dof == 2:
+            # Instantiate the node shape function
+            self.make_shape_xy()
+            # Get the integration points
+            xis = np.array([pt[0] for pt in self.integration_points_2])
+            etas = np.array([pt[1] for pt in self.integration_points_2])
+            # Evaluate the shape function at the integration points
+            shape = self.shape(xis, etas)
+
+            # Compute the node coordinate integration points
+            x_points = shape.T @ self.x
+            y_points = shape.T @ self.y
+
+            # Mass tensor
+            V = np.identity(2) * material.rho * thickness
+
+            # Integrate to find the element mass matrix
+            Me = 0
+            for x, y, wt in zip(x_points, y_points, self.integration_weights_2):
+                N = self.shape_xy(x, y)
+                Me += wt * N.T @ V @ N * self.det_J()
+            return Me
 
 
 class T6(object):
@@ -569,10 +639,9 @@ class Q4(object):
             Me = 0
             for x, y, xi, eta, wt in zip(x_points, y_points, xis, etas, self.integration_weights_2):
                 N = self.shape_xy(x, y)
-                Me += N.T @ V @ N * self.det_J(xi, eta)
+                Me += wt * N.T @ V @ N * self.det_J(xi, eta)
 
             return Me
-
 
 
 # TODO : Complete the Q8 element

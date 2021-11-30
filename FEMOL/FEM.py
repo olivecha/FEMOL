@@ -115,9 +115,7 @@ class FEM_Problem(object):
 
         Coating problem :
         define_tensor(base thickness or base layup, coating thickness or coating layup)
-
         """
-
         # Empty tensor list
         C_A, C_D, C_G, ho = [], [], [], []
 

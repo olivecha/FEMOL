@@ -581,7 +581,6 @@ class SIMP_VIBE(object):
         """
         Maximize eigenvalue objective function
         """
-
         # If the problem mesh is structured
         if self.mesh.structured:
             dlmbd = []
@@ -623,8 +622,9 @@ class SIMP_VIBE(object):
 
             return self.lmbd, np.array(dlmbd)
 
+    def _coating_max_eigs_objective_function(self, X):
+        raise NotImplementedError
+
     def _solid_min_eigs_objective_function(self, X):
         raise NotImplementedError
 
-    def _coating_max_eigs_objective_function(self, X):
-        raise NotImplementedError

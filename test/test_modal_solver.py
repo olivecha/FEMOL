@@ -74,5 +74,22 @@ class MyTestCase(unittest.TestCase):
         self.assertTrue(np.allclose(w1[:10], w2[:10]))
         self.assertFalse(np.allclose(problem1.M.toarray(), problem2.M.toarray()))
 
+    def test_T3_Q4_elements_comparison(self):
+        """
+        Test the same vibration problem for T3 and Q4 elements
+        Compares the obtained eigenvalues
+        """
+        mesh1 = FEMOL.mesh.rectangle_T3(1, 1, 10, 10)
+        mesh2 = FEMOL.mesh.rectangle_Q4(1, 1, 10, 10)
+
+        w = []
+        for mesh in [mesh1, mesh2]:
+            problem = FEMOL.FEM_Problem(mesh=mesh, physics='modal', model='plane')
+            problem.define_materials(FEMOL.materials.general_isotropic())
+            problem.define_tensors(1)
+            wi, v = problem.solve(filtre=0, verbose=False)
+            w.append(wi)
+        self.assertTrue(np.allclose(w[0][:15] - w[1][:15], 0, atol=1e-1))
+
 if __name__ == '__main__':
     unittest.main()
