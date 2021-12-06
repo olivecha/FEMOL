@@ -68,8 +68,11 @@ class MyTestCase(unittest.TestCase):
         problem.define_tensors(thickness)
         circle_domain = FEMOL.domains.outside_circle(0, 0, R - 0.005)
         problem.add_fixed_domain(circle_domain)
-        w, v = problem.solve(filtre=2)
-        FEM_W = np.around(w, 1)
+        w, v = problem.solve(filtre=0)
+        w = w[w > 1]
+        w = np.around(w, 0)
+        w = np.unique(w)
+        FEM_W = w
         DIFF = (FEM_W[:14] - REF_W)
         MEAN = 0.5 * ((FEM_W[:14] + REF_W))
         self.assertTrue(((100 * DIFF / MEAN)[:6] < 2).all())

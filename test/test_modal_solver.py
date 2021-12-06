@@ -23,7 +23,7 @@ class MyTestCase(unittest.TestCase):
 
     def test_coating_mass_matrix_structured_assembly(self):
         # a structured mesh
-        mesh = FEMOL.mesh.rectangle_Q4(1, 1, 15, 15)
+        mesh = FEMOL.mesh.rectangle_Q4(1, 1, 10, 10)
         # Modal analysis problem (6 dof)
         problem1 = FEMOL.FEM_Problem(mesh=mesh, physics='modal', model='plate')
         problem2 = FEMOL.FEM_Problem(mesh=mesh, physics='modal', model='plate')
@@ -44,7 +44,7 @@ class MyTestCase(unittest.TestCase):
     def test_coating_mass_matrix_unstructured_assembly(self):
         # Circle mesh with R = 0.5 and ~25 ** 2 elements
         R = 0.5  # m
-        N_ele = 25
+        N_ele = 10
         mesh = FEMOL.mesh.circle_Q4(R, N_ele)
 
         # Problem definition

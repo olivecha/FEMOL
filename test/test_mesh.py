@@ -1,7 +1,5 @@
 import unittest
-
 import numpy as np
-
 import FEMOL
 import os
 
@@ -33,8 +31,6 @@ class MyTestCase(unittest.TestCase):
         force = [0, -0.1]
         force_domain = FEMOL.domains.inside_box([L], [[L / 2 - 1, L / 2 + 1]])
         plate_FEM.add_forces(force, force_domain)
-
-        mesh = plate_FEM.solve()
 
         topo_problem = FEMOL.SIMP_COMP(plate_FEM, volfrac=0.4, penal=3)
         mesh = topo_problem.solve(converge=0.03, max_iter=1, plot=False, save=False)

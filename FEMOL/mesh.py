@@ -4,6 +4,7 @@ import meshzoo
 import matplotlib.pyplot as plt
 import matplotlib.tri as tri
 import FEMOL.elements
+import scipy.sparse
 # Configuration
 
 
@@ -40,17 +41,20 @@ class Mesh(object):
             # Compute the total number of elements
             self.N_ele = np.sum([self.cells[cell_type].shape[0] for cell_type in self.contains])
 
-        # Compute the total number of nodes
-        self.N_nodes = self.points.shape[0]
-        self.full_nodes = np.hstack([self.cells[cell_type].reshape(-1) for cell_type in self.contains])
-        self.full_nodes = np.unique(self.full_nodes)
-        self.empty_nodes = np.nonzero(~np.in1d(np.arange(self.N_nodes), self.full_nodes))[0]
-
         # Define the element classes
         if tri_element:
             self.ElementClasses['triangle'] = tri_element
         if quad_element:
             self.ElementClasses['quad'] = quad_element
+        if self.ElementClasses['triangle'] == FEMOL.elements.T6:
+            if 'triangle' in self.contains:
+                self.make_triangles_quad()
+
+        # Compute the total number of nodes
+        self.N_nodes = self.points.shape[0]
+        self.full_nodes = np.hstack([self.cells[cell_type].reshape(-1) for cell_type in self.contains])
+        self.full_nodes = np.unique(self.full_nodes)
+        self.empty_nodes = np.nonzero(~np.in1d(np.arange(self.N_nodes), self.full_nodes))[0]
 
         # Create the plotter instance
         self.plot = MeshPlot(self)
@@ -60,7 +64,7 @@ class Mesh(object):
         all_cells = [nodes for node_list in all_cells for nodes in node_list]
         self.all_cells = np.array(all_cells, dtype=object)
 
-    def display(self, backend='matplotlib', color='#D1E8FF'):
+    def display(self, backend='matplotlib', color='#D1E8FF', plot_nodes=False):
         """
         Plot the mesh using the specified backend
         Supported are :
@@ -68,7 +72,7 @@ class Mesh(object):
         - #TODO 'Pyvista'
         """
         if backend == 'matplotlib':
-            fig, ax = plt.subplots(figsize=(6, 6))
+            ax = plt.gca()
             ax.set_title('Mesh')
             ax.set_aspect('equal')
             ax.set_axis_off()
@@ -79,6 +83,9 @@ class Mesh(object):
                     x = cell_points.T[0]
                     y = cell_points.T[1]
                     ax.fill(x, y, color, edgecolor='k', zorder=-1)
+
+            if plot_nodes:
+                plt.scatter(*self.points.T[:2], color='k')
 
     def save(self, file):
         """
@@ -93,9 +100,13 @@ class Mesh(object):
                 new_data.append(self.cell_data[data][cell_type])
             new_cell_data[data] = new_data
 
+        cellkeys = ['triangle', 'quad', 'T6']
+        # Only keep the cell having data
+        cells = {celltype:self.cells[cell_type] for celltype in self.cells if celltype in cellkeys}
+
         meshio_mesh = meshio.Mesh(
             self.points,
-            self.cells,
+            cells,
             # Optionally provide extra data on points, cells, etc.
             point_data=self.point_data,
             # Each item in cell data must match the cells array
@@ -227,6 +238,39 @@ class Mesh(object):
             self.point_data[self.point_variables[dof]] = U[np.arange(dof, len(U), N_dof)]
         self.wrap()
 
+    def stress_from_displacement(self, *tensors, N_dof=2):
+        """
+        Computes the stress as cell data for the mesh
+        :param tensors: Stiffness tensors
+        """
+        if N_dof == 2:
+            self.cell_data['Sx'] = {}
+            self.cell_data['Sy'] = {}
+            self.cell_data['Sxy'] = {}
+            self.cell_data['Sv'] = {}
+
+            for celltype in self.contains:
+                S = []
+                for i, cell in enumerate(self.cells[celltype]):
+                    ux = self.point_data['Ux'][cell]
+                    uy = self.point_data['Uy'][cell]
+                    u = np.empty(ux.size * 2)
+                    u[::2] = ux
+                    u[1::2] = uy
+                    element = self.ElementClasses[celltype](self.points[cell], N_dof=N_dof)
+                    if 'X' in self.cell_data.keys():
+                        S.append(element.stress(u, tensors[0] + tensors[0]*self.cell_data['X'][celltype][i]))
+                    else:
+                        S.append(element.stress(u, tensors[0]))
+
+                S = np.array(S)
+
+                Sv = np.sqrt(((S[:,0] - S[:,1])**2 + (S[:,1] - S[:,2])**2 + (S[:,2] - S[:,0])**2)/2)
+                self.cell_data['Sx'][celltype] = S[:, 0]
+                self.cell_data['Sy'][celltype] = S[:, 1]
+                self.cell_data['Sxy'][celltype] = S[:, 2]
+                self.cell_data['Sv'][celltype] = Sv
+
     def add_mode(self, name, V, N_dof):
         """
         Adds a eigen vector to the mesh as point data
@@ -285,6 +329,50 @@ class Mesh(object):
                     break
             return keys
 
+    def make_triangles_quad(self):
+        """
+        Convert the triangles cells to T6 cells with 6 points
+        """
+        # Create the nodes between the existing corners
+        new_nodes = []
+        new_nodes_ids = []
+        # Create a new node between every node for each cell
+        for cell in self.cells['triangle']:
+            # Add the first corner at the end
+            cell = np.append(cell, cell[0])
+            # For each pair of nodes
+            for i in range(len(cell) - 1):
+                # Store the node ids
+                new_nodes_ids.append([cell[i], cell[i + 1]])
+                # Create the new node and add to list
+                new_nodes.append(self._mid_point(cell[i], cell[i + 1]))
+
+        # Convert to array
+        new_nodes = np.array(new_nodes)
+        # Make unique
+        unique_nodes, inverse_indexes = np.unique(new_nodes, axis=0, return_inverse=True)
+        # Split the two nodes list
+        i, j = np.array(new_nodes_ids).T
+        # Create a sparse matrix where M[1,2] returns the index of the new node between nodes 1 and 2
+        N_Mat = scipy.sparse.coo_matrix((inverse_indexes + self.points.shape[0], (i, j)))
+        N_Mat = N_Mat.tocsr()
+
+        new_cells = []
+        for cell in self.cells['triangle']:
+            new_cell = [cell[0], N_Mat[cell[0], cell[1]],
+                        cell[1], N_Mat[cell[1], cell[2]],
+                        cell[2], N_Mat[cell[2], cell[0]]]
+            new_cells.append(new_cell)
+        self.cells['triangle'] = np.array(new_cells)
+        self.points = np.vstack([self.points, unique_nodes])
+
+    def _mid_point(self, id1, id2):
+        p1 = self.points[id1]
+        p2 = self.points[id2]
+        x = (p1[0] + p2[0]) / 2
+        y = (p1[1] + p2[1]) / 2
+        return np.array([x, y, 0])
+
 
 class MeshPlot(object):
     """
@@ -293,7 +381,7 @@ class MeshPlot(object):
     def __init__(self, mesh, backend='matplotlib'):
         self.mesh = mesh
         self.backend = backend
-        self._quads_to_tris()
+        self._make_all_cells_T3()
 
     def quality(self):
         """
@@ -418,35 +506,46 @@ class MeshPlot(object):
                     x, y = self.mesh.points[nodes].T[:2]
                     plt.fill(x, y, edgecolor='black', fill=False, linewidth=0.3)
 
-    def _quads_to_tris(self):
+    def _make_all_cells_T3(self):
         """
         Convert the quadrilateral elements to triangles
         """
+        T3_cells_group = []
+        if 'triangle' in self.mesh.contains:
+            if self.mesh.cells['triangle'][0].shape[0] == 3:
+                T3_cells_group.append(self.mesh.cells['triangle'])
+            elif self.mesh.cells['triangle'][0].shape[0] == 6:
+                T3_cells = []
+                for cell in self.mesh.cells['triangle']:
+                    T3_cells.append(cell[[0, 1, 3]])
+                    T3_cells.append(cell[[1, 2, 3]])
+                    T3_cells.append(cell[[3, 4, 5]])
+                    T3_cells.append(cell[[0, 3, 5]])
+                T3_cells = np.array(T3_cells)
+                T3_cells_group.append(T3_cells)
+
         if 'quad' in self.mesh.contains:
             quads = self.mesh.cells['quad']
-            tris = []
+            T3_cells = []
             for quad in quads:
-                tris.append(quad[[0, 1, 2]])
-                tris.append(quad[[2, 3, 0]])
+                T3_cells.append(quad[[0, 1, 2]])
+                T3_cells.append(quad[[2, 3, 0]])
+            # Make into array
+            T3_cells = np.array(T3_cells)
+            T3_cells_group.append(T3_cells)
 
-            tris = np.array(tris)
-            if 'triangle' in self.mesh.contains:
-                self.all_tris = np.concatenate([self.mesh.cells['triangle'], tris])
-            else:
-                self.all_tris = np.array(tris)
-        else:
-            self.all_tris = self.mesh.cells['triangle']
+        self.all_tris = np.concatenate(T3_cells_group)
 
 """
 Mesh manipulation
 """
 
-def load_vtk(file):
-    """
+"""
     Load a vtk mesh with meshio and convert it to FEMOL mesh
     :param file: filepath
     :return: FEMOL mesh
     """
+def load_vtk(file):
     meshio_mesh = meshio.read(file)
     femol_mesh = Mesh(meshio_mesh.points, meshio_mesh.cells_dict)
     femol_mesh.point_data = meshio_mesh.point_data
@@ -472,21 +571,29 @@ def rectangle_Q4(Lx, Ly, nelx, nely):
     points, cells = meshzoo.rectangle_quad((0, Lx), (0, Ly), (nelx, nely))
     cell_dict = {'quad': cells}
     mesh = Mesh(points, cell_dict, structured=True, quad_element=FEMOL.elements.Q4)
-
     return mesh
 
 def rectangle_T3(Lx, Ly, nelx, nely):
     """
-    A function returning a structured rectangular 2D triangular mesh
+    A function returning an unstructured rectangular 2D triangular mesh
     """
     # Get the points and cells from meshzoo module
     points, cells = meshzoo.rectangle_tri((0, Lx), (0, Ly), (nelx, nely))
     cell_dict = {'triangle': cells}
     mesh = Mesh(points, cell_dict, tri_element=FEMOL.elements.T3)
-
     return mesh
 
-def circle_Q4(R, N_ele):
+def rectangle_T6(Lx, Ly, nelx, nely):
+    """
+    A function returning a unstructured rectangular 2D quadratic triangles mesh
+    """
+    # Get the points and cells from meshzoo module
+    points, cells = meshzoo.rectangle_tri((0, Lx), (0, Ly), (nelx, nely))
+    cell_dict = {'triangle': cells}
+    mesh = Mesh(points, cell_dict, tri_element=FEMOL.elements.T6)
+    return mesh
+
+def circle_Q4(R, N_ele, **kwargs):
     """
     Function returning a circular mesh with quadrilaterals
     meshzoo : Ordered mesh from meshzoo
@@ -496,7 +603,7 @@ def circle_Q4(R, N_ele):
     points, cells = meshzoo.disk_quad(N_ele)
     cells_dict = {'quad': cells}
     # Create a mesh with the Q4 elements (circle with quads is not a good quality mesh)
-    mesh = Mesh(points * (R / (np.sqrt(2) / 2)), cells_dict, quad_element=FEMOL.elements.Q4)
+    mesh = Mesh(points * (R / (np.sqrt(2) / 2)), cells_dict, **kwargs)
     return mesh
 
 def circle_T3(R, N_ele, order=7):
@@ -511,7 +618,7 @@ def circle_T3(R, N_ele, order=7):
     points, cells = meshzoo.disk(order, N_ele)
     cells_dict = {'triangle': cells}
     # Create a mesh with the T3 elements
-    mesh = Mesh(points, cells_dict,  tri_element=FEMOL.elements.T3)
+    mesh = Mesh(points, cells_dict, tri_element=FEMOL.elements.T3)
     # Scale the points
     mesh.points *= R
 

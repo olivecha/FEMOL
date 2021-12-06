@@ -10,9 +10,15 @@ class T3(object):
     """
     # Number of nodes of the element
     N_nodes = 3
-    # 1st order gauss integration points
-    integration_points_2 = [(1/3, 1/3), (1/5, 1/5), (3/5, 1/5), (1/5, 3/5)]
-    integration_weights_2 = [-27/96, 25/96, 25/96, 25/96]
+    # 1st order integration
+    integration_points_1 = [(1/3, 1/3)]
+    integration_weights_1 = [1]
+    # 2nd order integration
+    integration_points_2 = [(2/3, 1/6), (1/6, 1/6), (1/6, 2/3)]
+    integration_weights_2 = [1/3, 1/3, 1/3]
+    # 3rd order gauss integration points
+    integration_points_3 = [(1/3, 1/3), (1/5, 1/5), (3/5, 1/5), (1/5, 3/5)]
+    integration_weights_3 = [-27/96, 25/96, 25/96, 25/96]
 
     # shape functions and derivatives
     @staticmethod
@@ -155,8 +161,6 @@ class T3(object):
         # define shape according to degrees of freedom
         if self.N_dof == 2:
             b_i = 3
-        elif self.N_dof == 6:
-            b_i = 8
 
         b_j = self.size
 
@@ -212,8 +216,8 @@ class T3(object):
             # Instantiate the node shape function
             self.make_shape_xy()
             # Get the integration points
-            xis = np.array([pt[0] for pt in self.integration_points_2])
-            etas = np.array([pt[1] for pt in self.integration_points_2])
+            xis = np.array([pt[0] for pt in self.integration_points_3])
+            etas = np.array([pt[1] for pt in self.integration_points_3])
             # Evaluate the shape function at the integration points
             shape = self.shape(xis, etas)
 
@@ -226,14 +230,418 @@ class T3(object):
 
             # Integrate to find the element mass matrix
             Me = 0
-            for x, y, wt in zip(x_points, y_points, self.integration_weights_2):
+            for x, y, wt in zip(x_points, y_points, self.integration_weights_3):
                 N = self.shape_xy(x, y)
                 Me += wt * N.T @ V @ N * self.det_J()
             return Me
 
 
 class T6(object):
-    pass   # TODO : Add the T6 triangle quadratic element
+
+    N_nodes = 6
+    # 1st order integration
+    integration_points_1 = [(1/3, 1/3)]
+    integration_weights_1 = [1]
+    # 2nd order integration
+    integration_points_2 = [(2/3, 1/6), (1/6, 1/6), (1/6, 2/3)]
+    integration_weights_2 = [1/3, 1/3, 1/3]
+    # 3rd order gauss integration points
+    integration_points_3 = [(1/3, 1/3), (1/5, 1/5), (3/5, 1/5), (1/5, 3/5)]
+    integration_weights_3 = [-27/96, 25/96, 25/96, 25/96]
+
+    @staticmethod
+    def shape(xi, eta):
+        """
+        Element shape function N(xi, eta) = [N1, ... , N6]
+        """
+        lm = 1 - xi - eta
+        N = np.array([-lm*(1 - 2*lm),
+                      4*xi*lm,
+                     -xi*(1 - 2*xi),
+                      4*xi*eta,
+                     -eta*(1 - 2*eta),
+                      4*eta*lm])
+        return N
+
+    @staticmethod
+    def dshape_dxi(xi, eta):
+        """
+        Element shape function derivative in respect to xi
+        """
+        lm = 1 - xi - eta
+        dN_dxi = np.array([1 - 4*lm,
+                          4*(lm - xi),
+                         -1 + 4*xi,
+                          4*eta,
+                          0,
+                         -4*eta])
+        return dN_dxi
+
+    @staticmethod
+    def dshape_deta(xi, eta):
+        """
+        Element shape function derivative in respect to eta
+        """
+        lm = 1 - xi - eta
+        dN_deta = np.array([1 - 4*lm,
+                          -4*xi,
+                           0,
+                           4*xi,
+                          -1 + 4*eta,
+                           4*(lm - eta)])
+        return dN_deta
+
+    def __init__(self, points, N_dof=2):
+        """
+        Constructor for the T6 quadratic triangle element
+        :param points: node coordinates
+        :param N_dof: degrees of freedom
+        """
+        self.x, self.y = points.transpose()[:2] # 2D only
+        self.N_dof = N_dof  # Number of degrees of freedom
+        self.size = self.N_nodes * N_dof  # Element size in the global matrix
+
+    def make_shape_xy(self):
+        """
+        Method defining the shape functions of the element
+        """
+        x1, x2, x3, x4, x5, x6 = self.x[:6]
+        y1, y2, y3, y4, y5, y6 = self.y[:6]
+
+        def N1(x, y):
+            a = (x2 - x3)*(y - y3) - (y2 - y3)*(x - x3)
+            b = (x4 - x6)*(y - y6) - (y4 - y6)*(x - x6)
+            c = (x2 - x3)*(y1 - y3) - (y2 - y3)*(x1 - x3)
+            d = (x4 - x6)*(y1 - y6) - (y4 - y6)*(x1 - x6)
+            return (a*b)/(c*d)
+
+        def N2(x, y):
+            a = (x3 - x1)*(y - y1) - (y3 - y1)*(x - x1)
+            b = (x5 - x4)*(y - y4) - (y5 - y4)*(x - x4)
+            c = (x3 - x1)*(y2 - y1) - (y3 - y1)*(x2 - x1)
+            d = (x5 - x4)*(y2 - y4) - (y5 - y4)*(x2 - x4)
+            return (a*b)/(c*d)
+
+        def N3(x, y):
+            a = (x2 - x1)*(y - y1) - (y2 -y1)*(x - x1)
+            b = (x5 - x6)*(y - y6) - (y5 - y6)*(x - x6)
+            c = (x2 - x1)*(y3 - y1) - (y2 - y1)*(x3 - x1)
+            d = (x5 - x6)*(y3 - y6) - (y5 - y6)*(x3 - x6)
+            return (a*b)/(c*d)
+
+        def N4(x, y):
+            a = (x3 - x1)*(y - y1) - (y3 - y1)*(x - x1)
+            b = (x2 - x3)*(y - y3) - (y2 - y3)*(x - x3)
+            c = (x3 - x1)*(y4 - y1) - (y3 - y1)*(x4 - x1)
+            d = (x2 - x3)*(y4 - y3) - (y2 - y3)*(x4 - x3)
+            return (a*b)/(c*d)
+
+        def N5(x, y):
+            a = (x3 - x1)*(y - y1) - (y3 - y1)*(x - x1)
+            b = (x2 - x1)*(y - y1) - (y2 - y1)*(x - x1)
+            c = (x3 - x1)*(y5 - y1) - (y3 - y1)*(x5 - x1)
+            d = (x2 - x1)*(y5 - y1) - (y2 - y1)*(x5 - x1)
+            return (a*b)/(c*d)
+
+        def N6(x, y):
+            a = (x2 - x1)*(y - y1) - (y2 - y1)*(x - x1)
+            b = (x2 - x2)*(y - y3) - (y2 - y3)*(x - x3)
+            c = (x2 - x1)*(y6 - y1) - (y2 - y1)*(x6 - x1)
+            d = (x2 - x3)*(y6 - y3) - (y2 - y3)*(x6 - x3)
+            return (a*b)/(c*d)
+
+        shape_functions = [N1, N2, N3, N4, N5, N6]
+
+        def N(x, y):
+            I = np.eye(self.N_dof)
+            shape = np.hstack([I*Ni(x,y) for Ni in shape_functions])
+            return shape
+
+        self.shape_xy = N
+
+    def area(self):
+        """
+        Function computing the area of the element
+        """
+        x1, x2, x3 = self.x[[0, 2, 4]]
+        y1, y2, y3 = self.y[[0, 2, 4]]
+        A2 = x1*(y2 - y3) + x2*(y3-y1) + x3*(y1-y2)
+        A = A2/2
+        return A
+
+    def plot(self):
+        """
+        Plots the element using matplotlib
+        """
+        ax = plt.gca()
+        ax.scatter(self.x, self.y, color='k')
+        ax.plot(self.x[[0, 2]], self.y[[0, 2]], color='k')
+        ax.plot(self.x[[2, 4]], self.y[[2, 4]], color='k')
+        ax.plot(self.x[[4, 0]], self.y[[4, 0]], color='k')
+
+    def quality(self):
+        """
+        Measure the element quality by assessing the difference between its angles
+        and the optimal value (60 degrees)
+        """
+        x1, x2, x3 = self.x[0, 2, 4]
+        y1, y2, y3 = self.y[0, 2, 4]
+
+        norm = np.linalg.norm
+        v1 = [x3 - x1, y3 - y1]
+        v2 = [x2 - x1, y2 - y1]
+        T1 = np.arccos(np.inner(v1, v2) / (norm(v1) * norm(v2)))
+        v1 = [x1 - x2, y1 - y2]
+        v2 = [x3 - x2, y3 - y2]
+        T2 = np.arccos(np.inner(v1, v2) / (norm(v1) * norm(v2)))
+        v1 = [x2 - x3, y2 - y3]
+        v2 = [x1 - x3, y1 - y3]
+        T3 = np.arccos(np.inner(v1, v2) / (norm(v1) * norm(v2)))
+        T = np.array([T1, T2, T3])
+        Q = np.sum(np.abs(T - (np.pi/3)))
+        return Q
+
+    def J(self, xi, eta):
+        """
+        Fonction computing the Jacobian matrix for the T6 triangle element
+        """
+        S = np.vstack([self.x.T, self.y.T]).T
+        dN_dxi = self.dshape_dxi(xi, eta)
+        dN_deta = self.dshape_deta(xi, eta)
+        L = np.vstack([dN_dxi, dN_deta])
+        J = L @ S
+        return J
+
+    def det_J(self, xi, eta):
+        """
+        Function computing the jacobian matrix determinant at generalized
+        coordinates xi and eta
+        """
+        S = np.vstack([self.x.T, self.y.T]).T
+        dN_dxi = self.dshape_dxi(xi, eta)
+        dN_deta = self.dshape_deta(xi, eta)
+        L = np.vstack([dN_dxi, dN_deta])
+        J = L @ S
+        a, b, c, d = J.flatten()
+        det = a*d - c*b
+        return det
+
+    def dshape_dx(self, xi, eta):
+        """
+        Element shape function derivative in respect to x
+        """
+        J_mat = self.J(xi, eta)
+        d = J_mat[1, 1]
+        b = J_mat[0, 1]
+        J_det = self.det_J(xi, eta)
+        dN_dx = (1/J_det) * (d*self.dshape_dxi(xi, eta) - b*self.dshape_deta(xi, eta))
+        return dN_dx
+
+    def dshape_dy(self, xi, eta):
+        """
+        Element shape function derivative in respect to y
+        """
+        J_mat = self.J(xi, eta)
+        a = J_mat[0, 0]
+        c = J_mat[1, 0]
+        J_det = self.det_J(xi, eta)
+        dN_dy = (1/J_det) * (-c*self.dshape_dxi(xi, eta) + a*self.dshape_deta(xi, eta))
+        return dN_dy
+
+    def plane_B_matrix(self, xi, eta):
+        """
+        Computes the plane-stress strain matrix according to given generalized coordinates (xi, eta)
+
+        returns : The strain matrix according to the number of degree of freedom
+        """
+        # define shape according to degrees of freedom
+        if self.N_dof == 2:
+            b_i = 3
+        elif self.N_dof == 6:
+            b_i = 8
+
+        b_j = self.size
+
+        # Shape of the B matrix
+        B_shape = (b_i, b_j)
+        N_dof = self.N_dof
+        B = np.zeros(B_shape)  # 3, 8 or 8, 24
+
+        # Fill the strain matrix with shape function derivatives
+        B[0, range(0, b_j - 1, N_dof)] = self.dshape_dx(xi, eta)
+        B[1, range(1, b_j, N_dof)] = self.dshape_dy(xi, eta)
+        B[2, range(0, b_j - 1, N_dof)] = self.dshape_dy(xi, eta)
+        B[2, range(1, b_j, N_dof)] = self.dshape_dx(xi, eta)
+
+        return B
+
+    def bending_B_matrix(self, xi, eta):
+        """
+        Computes the bending strain matrix according to generalized coordinates
+
+        returns : The bending strain matrix evaluated at xi and eta
+        """
+        # Get the strain matrix size
+        b_i = 8
+        b_j = self.size
+        # Shape of the B matrix
+        B_shape = (b_i, b_j)
+        B = np.zeros(B_shape)
+        # Plate bending
+        B[3, range(3, b_j-1, self.N_dof)] = -self.dshape_dx(xi, eta)
+        B[4, range(4, b_j-1, self.N_dof)] = -self.dshape_dy(xi, eta)
+        B[5, range(4, b_j-1, self.N_dof)] = -self.dshape_dx(xi, eta)
+        B[5, range(3, b_j-1, self.N_dof)] = -self.dshape_dy(xi, eta)
+        return B
+
+    def shear_B_matrix(self, xi, eta):
+        """
+        Computes the shear strain matrix according to generalized coordinates
+
+        returns : The shear strain matrix evaluated at xi and eta
+        """
+        # Strain matrix
+        # Get the strain matrix size
+        b_i = 8
+        b_j = self.size
+        # Shape of the B matrix
+        B_shape = (b_i, b_j)
+        B = np.zeros(B_shape)
+        # dw/dx + theta_y
+        B[6, range(2, b_j-1, self.N_dof)] = self.dshape_dx(xi, eta)
+        B[7, range(2, b_j-1, self.N_dof)] = self.dshape_dy(xi, eta)
+        B[6, range(3, b_j-1, self.N_dof)] = -self.shape(xi, eta)
+        B[7, range(4, b_j-1, self.N_dof)] = -self.shape(xi, eta)
+
+        return B
+
+    def Ke(self, *tensors):
+        """
+        Method returning the element stiffness matrix from the stiffness tensors
+        Parameters
+        ----------
+        tensors :
+        If the element is plane stress : C, a 3x3 tensor
+        If the element is bending : C, D, G, 3x3, 3x3, 2x2 tensors
+
+        Returns
+        -------
+        Ke : The element stiffness matrix according to the nodes degrees of freedom
+        """
+
+        # plane-stress case
+        if self.N_dof == 2:
+            Ke = np.zeros((self.size, self.size))
+            C = tensors[0]
+            # 2nd gauss integration
+            for pt, w in zip(self.integration_points_3, self.integration_weights_3):
+                # Strain matrix
+                B = self.plane_B_matrix(*pt)
+                # Stiffness matrix summation
+                Ke += w*(B.T @ C @ B * self.det_J(*pt))
+            return Ke
+
+        # Plate bending case
+        elif self.N_dof == 6:
+            # Create 8x8 tensors
+            T = np.zeros((8, 8))
+            T[:3, :3] = tensors[0]
+            C = T
+            T = np.zeros((8, 8))
+            T[3:6, 3:6] = tensors[1]
+            D = T
+            T = np.zeros((8, 8))
+            T[6:, 6:] = tensors[2]
+            G = T
+            Kp, Kb, Ks = 0, 0, 0
+
+            # 2nd order gauss integration for the plane and bending terms
+            for pt, w in zip(self.integration_points_3, self.integration_weights_3):
+                # Plane stress strain matrix
+                Bp = self.plane_B_matrix(*pt)
+                # Plate bending strain matrix
+                Bb = self.bending_B_matrix(*pt)
+                # Jacobian determinant
+                det_J = self.det_J(*pt)
+                # Stiffness matrix summation
+                Kp += w*(Bp.T @ C @ Bp * det_J)
+                Kb += w*(Bb.T @ D @ Bb * det_J)
+
+            # 1st order gauss integration for the shear term
+            for pt, w in zip(self.integration_points_2, self.integration_weights_2):
+                # Shear strain matrix
+                Bs = self.shear_B_matrix(*pt)
+                # Element stiffness summation
+                Ks += w * (Bs.T @ G @ Bs * self.det_J(*pt))
+
+            Ke = Kp + Kb + Ks
+            Ke[np.arange(5, self.size, 6), np.arange(5, self.size, 6)] = 1
+            return Ke
+
+    def Me(self, material, thickness):
+        """
+        Method returning the element mass matrix from the element material
+        Parameters
+        ----------
+        material : A material class instance with a density attribute
+        thickness : The element thickness
+        Returns
+        -------
+        Me : The element mass matrix according to the nodes degrees of freedom
+        """
+        # Plane stress case
+        if self.N_dof == 2:
+            # Instantiate the node shape function
+            self.make_shape_xy()
+            # Get the integration points
+            xis = np.array([pt[0] for pt in self.integration_points_3])
+            etas = np.array([pt[1] for pt in self.integration_points_3])
+            # Evaluate the shape function at the integration points
+            shape = self.shape(xis, etas)
+
+            # Compute the node coordinate integration points
+            x_points = shape.T @ self.x
+            y_points = shape.T @ self.y
+
+            # Mass tensor
+            V = np.identity(2) * material.rho * thickness
+
+            # Integrate to find the element mass matrix
+            Me = 0
+            for x, y, xi, eta, wt in zip(x_points, y_points, xis, etas, self.integration_weights_3):
+                N = self.shape_xy(x, y)
+                Me += wt * (N.T @ V @ N * self.det_J(xi ,eta))
+            return Me
+
+        # Plate bending case
+        elif self.N_dof == 6:
+            # Instantiate the node shape function
+            self.make_shape_xy()
+            # Get the integration points
+            xis = np.array([pt[0] for pt in self.integration_points_3])
+            etas = np.array([pt[1] for pt in self.integration_points_3])
+            # Evaluate the shape function at the integration points
+            shape = self.shape(xis, etas)
+
+            # Compute the node coordinate integration points
+            x_points = shape.T @ self.x
+            y_points = shape.T @ self.y
+
+            # Mass tensor
+            V1 = np.identity(3) * material.rho * thickness
+            V2 = np.zeros((3, 3))
+            V3 = np.identity(3) * material.rho * (thickness ** 3)/12
+            V = np.vstack([np.hstack([V1, V2]), np.hstack([V2, V3])])
+
+            # Integrate to find the element mass matrix
+            Me = 0
+            for x, y, xi, eta, wt in zip(x_points, y_points, xis, etas, self.integration_weights_3):
+                N = self.shape_xy(x, y)
+                Me += wt * (N.T @ V @ N * self.det_J(xi, eta))
+
+            return Me
+
+
 
 
 class Q4(object):
@@ -562,8 +970,8 @@ class Q4(object):
                 # Jacobian determinant
                 det_J = self.det_J(*pt)
                 # Stiffness matrix summation
-                Kp += Bp.T @ C @ Bp * det_J
-                Kb += Bb.T @ D @ Bb * det_J
+                Kp += w * (Bp.T @ C @ Bp * det_J)
+                Kb += w * (Bb.T @ D @ Bb * det_J)
 
             # 1st order gauss integration for the shear term
             for pt, w in zip(self.integration_points_1, self.integration_weights_1):
@@ -642,6 +1050,16 @@ class Q4(object):
                 Me += wt * N.T @ V @ N * self.det_J(xi, eta)
 
             return Me
+
+    def stress(self, u, T):
+        """
+        Computes the stress components at the element centroid
+        :param u: Displacement vector
+        :param T: Stiffness tensor
+        :return: S, the stress components [Sx, Sy, Sxy]
+        """
+        S = T @ self.plane_B_matrix(0,0) @ u
+        return S
 
 
 # TODO : Complete the Q8 element

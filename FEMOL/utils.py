@@ -61,6 +61,20 @@ def plot_arc(x0, x1, pos_x, pos_y, r, side):
     if side == 'upper':
         ax.plot(x, y1_2, color='k')
 
+def plot_arc2(sta, c, sto, flip1=-1, flip2=1):
+    r = np.sqrt((sta[0] - c[0])**2 + (sta[1] - c[1])**2)
+    A1 = np.arctan2( sta[1] - c[1], sta[0] - c[0])
+    A2 = np.arctan2( sto[1] - c[1], sto[0] - c[0])
+    T = -np.linspace(A1, A2)
+    x = flip1*r*np.cos(T) + c[0]
+    y = flip2*r*np.sin(T) + c[1]
+    ax = plt.gca()
+    ax.plot(x, y, color='k')
+
+def plot_line(p1, p2):
+    ax = plt.gca()
+    ax.plot([p1[0], p2[0]], [p1[1], p2[1]], color='k')
+
 def guitar_domain_figure():
     """
     Plots the figure corresponding to a definition of the guitar domain

@@ -67,6 +67,7 @@ class MyTestCase(unittest.TestCase):
         problem.add_fixed_domain(FEMOL.domains.inside_box([[0, Lx]], [0, Ly]), ddls=[2, 3])
 
         Force = -1 * ((n - 1) ** 2 / n ** 2)
+        print('Force : ', Force)
 
         problem.add_forces([0, 0, Force, 0, 0, 0],
                            FEMOL.domains.inside_box([[0 + 0.01, Lx - 0.01]], [[0 + 0.01, Ly - 0.01]]))
