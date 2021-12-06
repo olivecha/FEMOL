@@ -5,7 +5,6 @@ sys.path.append('../')
 import FEMOL.elements
 import FEMOL.test_utils
 
-
 class MyTestCase(unittest.TestCase):
     """
     Tests for the T3 element
@@ -34,7 +33,7 @@ class MyTestCase(unittest.TestCase):
 
         self.assertTrue(np.allclose(Ke, Ke_ref, 1e-4))
 
-    def test_T3_2dof_reference_solution(self):
+    def test_T3_2dof_inplane_displacement_solution(self):
         """
         Tests the T3 element with a reference example taken from :
         Kattan, P. I. (2007). MATLAB guide to finite elements:
@@ -66,6 +65,37 @@ class MyTestCase(unittest.TestCase):
 
         # Validate solution
         self.assertTrue(np.allclose(mesh.U[mesh.U != 0] / 1e-5, [0.7111, 0.1115, 0.6531, 0.0045], 1e-2))
+
+    def test_T3_in_plane_disk_modal_solution(self):
+        """
+        Example with reference solution
+
+        Reference values taken from :
+        Park, C. I. (2008). Frequency equation for the in-plane vibration of a clamped circular plate.
+        Journal of Sound and Vibration, 313(1‑2), 325‑333. https://doi.org/10.1016/j.jsv.2007.11.034
+        """
+        # Reference eigenvalues (Hz) (Park, C. I. (2008)).
+        REF_W = np.array([3363.6, 3836.4, 5217.5, 5380.5,
+                          6624, 6749.3, 6929, 7019.3, 8093,
+                          8476.5, 8530.6, 9258, 9328.1, 9887.7])
+        R = 0.5  # m
+        N_ele = 10
+        mesh = FEMOL.mesh.circle_T3(R, N_ele)
+        thickness = 0.005
+        aluminium = FEMOL.materials.IsotropicMaterial(71e9, 0.33, 2700)
+        problem = FEMOL.FEM_Problem(mesh=mesh, physics='modal', model='plane')
+        problem.define_materials(aluminium)
+        problem.define_tensors(thickness)
+        circle_domain = FEMOL.domains.outside_circle(0, 0, R - 0.005)
+        problem.add_fixed_domain(circle_domain)
+        w, v = problem.solve(filtre=0)
+        w = w[w > 1]
+        w = np.around(w, 0)
+        w = np.unique(w)
+        FEM_W = w
+        DIFF = (FEM_W[:14] - REF_W)
+        MEAN = 0.5 * ((FEM_W[:14] + REF_W))
+        self.assertTrue(((100 * DIFF / MEAN)[:6] < 2).all())
 
 if __name__ == '__main__':
     unittest.main()

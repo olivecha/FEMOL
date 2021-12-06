@@ -305,8 +305,10 @@ class T6(object):
         """
         Method defining the shape functions of the element
         """
-        x1, x2, x3, x4, x5, x6 = self.x[:6]
-        y1, y2, y3, y4, y5, y6 = self.y[:6]
+        x1, x2, x3 = self.x[:6:2]
+        x4, x5, x6 = self.x[1:6:2]
+        y1, y2, y3 = self.y[:6:2]
+        y4, y5, y6 = self.y[1:6:2]
 
         def N1(x, y):
             a = (x2 - x3)*(y - y3) - (y2 - y3)*(x - x3)
@@ -345,12 +347,14 @@ class T6(object):
 
         def N6(x, y):
             a = (x2 - x1)*(y - y1) - (y2 - y1)*(x - x1)
-            b = (x2 - x2)*(y - y3) - (y2 - y3)*(x - x3)
+            b = (x2 - x3)*(y - y3) - (y2 - y3)*(x - x3)
             c = (x2 - x1)*(y6 - y1) - (y2 - y1)*(x6 - x1)
             d = (x2 - x3)*(y6 - y3) - (y2 - y3)*(x6 - x3)
             return (a*b)/(c*d)
 
-        shape_functions = [N1, N2, N3, N4, N5, N6]
+        shape_functions = np.array([N1, N2, N3, N4, N5, N6])
+        point_order = [0, 3, 1, 4, 2, 5]
+        shape_functions = shape_functions[point_order]
 
         def N(x, y):
             I = np.eye(self.N_dof)
@@ -594,8 +598,8 @@ class T6(object):
             # Instantiate the node shape function
             self.make_shape_xy()
             # Get the integration points
-            xis = np.array([pt[0] for pt in self.integration_points_3])
-            etas = np.array([pt[1] for pt in self.integration_points_3])
+            xis = np.array([pt[0] for pt in self.integration_points_2])
+            etas = np.array([pt[1] for pt in self.integration_points_2])
             # Evaluate the shape function at the integration points
             shape = self.shape(xis, etas)
 
@@ -604,11 +608,11 @@ class T6(object):
             y_points = shape.T @ self.y
 
             # Mass tensor
-            V = np.identity(2) * material.rho * thickness
+            V = 0.5 * np.identity(2) * material.rho * thickness
 
             # Integrate to find the element mass matrix
             Me = 0
-            for x, y, xi, eta, wt in zip(x_points, y_points, xis, etas, self.integration_weights_3):
+            for x, y, xi, eta, wt in zip(x_points, y_points, xis, etas, self.integration_weights_2):
                 N = self.shape_xy(x, y)
                 Me += wt * (N.T @ V @ N * self.det_J(xi ,eta))
             return Me
@@ -618,8 +622,8 @@ class T6(object):
             # Instantiate the node shape function
             self.make_shape_xy()
             # Get the integration points
-            xis = np.array([pt[0] for pt in self.integration_points_3])
-            etas = np.array([pt[1] for pt in self.integration_points_3])
+            xis = np.array([pt[0] for pt in self.integration_points_2])
+            etas = np.array([pt[1] for pt in self.integration_points_2])
             # Evaluate the shape function at the integration points
             shape = self.shape(xis, etas)
 
@@ -628,20 +632,17 @@ class T6(object):
             y_points = shape.T @ self.y
 
             # Mass tensor
-            V1 = np.identity(3) * material.rho * thickness
+            V1 = 0.5*np.identity(3) * material.rho * thickness
             V2 = np.zeros((3, 3))
-            V3 = np.identity(3) * material.rho * (thickness ** 3)/12
+            V3 = np.identity(3) * material.rho * ((thickness) ** 3)/12
             V = np.vstack([np.hstack([V1, V2]), np.hstack([V2, V3])])
 
             # Integrate to find the element mass matrix
             Me = 0
-            for x, y, xi, eta, wt in zip(x_points, y_points, xis, etas, self.integration_weights_3):
+            for x, y, xi, eta, wt in zip(x_points, y_points, xis, etas, self.integration_weights_2):
                 N = self.shape_xy(x, y)
                 Me += wt * (N.T @ V @ N * self.det_J(xi, eta))
-
             return Me
-
-
 
 
 class Q4(object):

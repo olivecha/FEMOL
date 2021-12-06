@@ -17,46 +17,6 @@ def reduce_mesh(mesh, tr):
     new_mesh.point_data = mesh.point_data
     return new_mesh
 
-def compute_stress(cell, mesh, problem):
-    """
-    Compute the stress components at the centroid of a Q4 cell
-    """
-    pts = mesh.points[cell]
-    element = FEMOL.elements.Q4(pts, N_dof=2)
-    C = problem.C_A
-    ux = mesh.point_data['Ux'][cell]
-    uy = mesh.point_data['Uy'][cell]
-    u = np.empty(ux.size*2)
-    u[::2] = ux
-    u[1::2] = uy
-    B = element.plane_B_matrix(0,0)
-    S = C @ B @ u
-    Sv = np.sqrt(((S[0] - S[1])**2 + (S[1] - S[2])**2 + (S[2] - S[0])**2)/2)
-    Sx, Sy, Sxy = S
-    return Sx, Sy, Sxy, Sv
-
-def add_stress(mesh, problem):
-    """
-    Add the stress component to the mesh cell data dict
-    """
-    Sx, Sy, Sxy, Sv = [], [], [], []
-
-    for cell in mesh.cells['quad']:
-        Si = compute_stress(cell, mesh, problem)
-        Sx.append(Si[0])
-        Sy.append(Si[1])
-        Sxy.append(Si[2])
-        Sv.append(Si[3])
-
-    Sv = np.array(Sv)
-    Sv[Sv > (1.3 * Sv.mean())] = Sv.mean()
-
-    mesh.cell_data['Sx'] = {'quad': Sx}
-    mesh.cell_data['Sy'] = {'quad': Sy}
-    mesh.cell_data['Sxy'] = {'quad': Sxy}
-    mesh.cell_data['Sv'] = {'quad': Sv}
-    return mesh
-
 def plot_L_outline1():
     """
     Plot the square 'L' bracket outline

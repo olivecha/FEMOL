@@ -623,3 +623,20 @@ def circle_T3(R, N_ele, order=7):
     mesh.points *= R
 
     return mesh
+
+def circle_T6(R, N_ele, order=7):
+    """
+    Function returning a circular mesh with quadrilaterals
+    R: Circle radius
+    N_ele: Number of elements on the radius
+    order: Source polygon for the inflation
+    Taken from: https://github.com/nschloe/meshzoo
+    """
+    # Use meshzoo for simple meshes
+    points, cells = meshzoo.disk(order, N_ele)
+    cells_dict = {'triangle': cells}
+    # Create a mesh with the T3 elements
+    mesh = Mesh(points, cells_dict, tri_element=FEMOL.elements.T6)
+    # Scale the points
+    mesh.points *= R
+    return mesh
