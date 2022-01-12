@@ -1,19 +1,17 @@
 import numpy as np
 import meshio
 import meshzoo
+import pygmsh
 import matplotlib.pyplot as plt
 import matplotlib.tri as tri
 import FEMOL.elements
 import scipy.sparse
-# Configuration
 
 
 class Mesh(object):
     """
     A class representing a generic 2D mesh
     """
-    ElementClasses = {'triangle': FEMOL.elements.T3,
-                      'quad': FEMOL.elements.Q4, }
     point_variables = ['Ux', 'Uy', 'Uz', 'Tx', 'Ty', 'Tz']
 
     def __init__(self, points, cell_dict, structured=False, quad_element=None, tri_element=None):
@@ -21,9 +19,11 @@ class Mesh(object):
         Constructor for the general mesh class
         """
         # Empty point and cell data dict
+        self.wrap_factor = None
         self.point_data = {}
         self.cell_data = {}
         self.cell_centers = {}
+        self.ElementClasses = {}
         # Store the cells and points into the Mesh instance
         self.cells = cell_dict
         if points.shape[1] == 2:
@@ -44,17 +44,22 @@ class Mesh(object):
         # Define the element classes
         if tri_element:
             self.ElementClasses['triangle'] = tri_element
+        else:
+            self.ElementClasses['triangle'] = FEMOL.elements.T3
         if quad_element:
             self.ElementClasses['quad'] = quad_element
+        else:
+            self.ElementClasses['quad'] = FEMOL.elements.Q4
+
         if self.ElementClasses['triangle'] == FEMOL.elements.T6:
             if 'triangle' in self.contains:
                 self.make_triangles_quad()
 
-        # Compute the total number of nodes
+        # Clean the mesh from empty nodes
+        self.clean()
+
+        # Compute the number of nodes
         self.N_nodes = self.points.shape[0]
-        self.full_nodes = np.hstack([self.cells[cell_type].reshape(-1) for cell_type in self.contains])
-        self.full_nodes = np.unique(self.full_nodes)
-        self.empty_nodes = np.nonzero(~np.in1d(np.arange(self.N_nodes), self.full_nodes))[0]
 
         # Create the plotter instance
         self.plot = MeshPlot(self)
@@ -86,6 +91,49 @@ class Mesh(object):
 
             if plot_nodes:
                 plt.scatter(*self.points.T[:2], color='k')
+
+    def compute_N_nodes(self):
+        """
+        Compute the number of nodes used by cells in the mesh
+        """
+        all_nodes = []
+        for cell_type in self.contains:
+            all_nodes.append(np.unique(self.cells[cell_type].flatten()))
+        N_nodes = np.unique(np.concatenate(all_nodes)).shape[0]
+        return N_nodes
+
+    def clean(self):
+        """
+        Remove the unused nodes from the mesh
+        """
+        # compute the full nodes
+        self.compute_full_nodes()
+        # get the node map
+        full_node_map = self.get_full_nodes_map()
+        # Transform the node numbers
+        for celltype in self.contains:
+            cellsize = self.cells[celltype].shape[1]
+            new_cells = full_node_map[self.cells[celltype].reshape(-1)].reshape(-1, cellsize)
+            self.cells[celltype] = new_cells
+        # Transform the points
+        self.points = self.points[self.full_nodes]
+
+    def compute_full_nodes(self):
+        """
+        Computes the nodes indexes used in cells
+        """
+        full_nodes = np.hstack([self.cells[cell_type].reshape(-1) for cell_type in self.contains])
+        self.full_nodes = np.unique(full_nodes)
+
+    def get_full_nodes_map(self):
+        """
+        Computes the map between the complete node set and the nodes used in cells
+        """
+        full_node_map = [0] + [0]*self.full_nodes[0].astype(int)
+        for i in range(1, self.full_nodes.shape[0]):
+            full_node_map += [i] * (self.full_nodes[i] - self.full_nodes[i - 1])
+        full_node_map = np.array(full_node_map)
+        return full_node_map.astype(int)
 
     def save(self, file):
         """
@@ -127,8 +175,6 @@ class Mesh(object):
         """
         # Get the nodes inside the domain
         nodes = np.array([domain(*coord[:2]) for coord in self.points]).nonzero()[0]
-        # Remove the nodes that are not in any cells
-        nodes = nodes[np.in1d(nodes, self.full_nodes)]
         return nodes
 
     def global_matrix_indexes(self, N_dof):
@@ -154,12 +200,14 @@ class Mesh(object):
         if self.structured:
             self.element = element
 
-        base_empty_node_range = np.tile(np.arange(N_dof), self.empty_nodes.shape[0])  # [0,...,N_dof]*N_empty_nodes
-        empty_node_dof_range = N_dof*np.repeat(self.empty_nodes, N_dof)  # [node*N_dof, ..., node*N_dof] *N_empty_nodes
-        empty_node_indexes = base_empty_node_range + empty_node_dof_range
+        #base_empty_node_range = np.tile(np.arange(N_dof), self.empty_nodes.shape[0])  # [0,...,N_dof]*N_empty_nodes
+        #empty_node_dof_range = N_dof*np.repeat(self.empty_nodes, N_dof)  # [node*N_dof, ..., node*N_dof] *N_empty_nodes
+        #empty_node_indexes = base_empty_node_range + empty_node_dof_range
 
-        self.rows = np.append(np.hstack(rows), empty_node_indexes)
-        self.cols = np.append(np.hstack(cols), empty_node_indexes)
+        #self.rows = np.append(np.hstack(rows), empty_node_indexes)
+        #self.cols = np.append(np.hstack(cols), empty_node_indexes)
+        self.rows = np.hstack(rows)
+        self.cols = np.hstack(cols)
 
     def dimensions(self):
         """
@@ -398,7 +446,7 @@ class MeshPlot(object):
         Plot the wrapped mesh in the X-Y plane with a nice color
         """
         if self.backend == 'matplotlib':
-            fig, ax = plt.subplots(figsize=(6, 6))
+            ax = plt.gca()
             ax.set_title('Wrapped 2D mesh')
             ax.set_aspect('equal')
             ax.set_axis_off()
@@ -521,6 +569,7 @@ class MeshPlot(object):
                     T3_cells.append(cell[[1, 2, 3]])
                     T3_cells.append(cell[[3, 4, 5]])
                     T3_cells.append(cell[[0, 3, 5]])
+                _ = T3_cells.pop(0)
                 T3_cells = np.array(T3_cells)
                 T3_cells_group.append(T3_cells)
 
@@ -540,12 +589,13 @@ class MeshPlot(object):
 Mesh manipulation
 """
 
-"""
+
+def load_vtk(file):
+    """
     Load a vtk mesh with meshio and convert it to FEMOL mesh
     :param file: filepath
     :return: FEMOL mesh
     """
-def load_vtk(file):
     meshio_mesh = meshio.read(file)
     femol_mesh = Mesh(meshio_mesh.points, meshio_mesh.cells_dict)
     femol_mesh.point_data = meshio_mesh.point_data
@@ -559,9 +609,11 @@ def load_vtk(file):
     femol_mesh.cell_data = new_cell_data
     return femol_mesh
 
+
 """
 Pre defined Meshes
 """
+
 
 def rectangle_Q4(Lx, Ly, nelx, nely):
     """
@@ -573,6 +625,7 @@ def rectangle_Q4(Lx, Ly, nelx, nely):
     mesh = Mesh(points, cell_dict, structured=True, quad_element=FEMOL.elements.Q4)
     return mesh
 
+
 def rectangle_T3(Lx, Ly, nelx, nely):
     """
     A function returning an unstructured rectangular 2D triangular mesh
@@ -583,6 +636,7 @@ def rectangle_T3(Lx, Ly, nelx, nely):
     mesh = Mesh(points, cell_dict, tri_element=FEMOL.elements.T3)
     return mesh
 
+
 def rectangle_T6(Lx, Ly, nelx, nely):
     """
     A function returning a unstructured rectangular 2D quadratic triangles mesh
@@ -592,6 +646,7 @@ def rectangle_T6(Lx, Ly, nelx, nely):
     cell_dict = {'triangle': cells}
     mesh = Mesh(points, cell_dict, tri_element=FEMOL.elements.T6)
     return mesh
+
 
 def circle_Q4(R, N_ele, **kwargs):
     """
@@ -605,6 +660,7 @@ def circle_Q4(R, N_ele, **kwargs):
     # Create a mesh with the Q4 elements (circle with quads is not a good quality mesh)
     mesh = Mesh(points * (R / (np.sqrt(2) / 2)), cells_dict, **kwargs)
     return mesh
+
 
 def circle_T3(R, N_ele, order=7):
     """
@@ -621,8 +677,8 @@ def circle_T3(R, N_ele, order=7):
     mesh = Mesh(points, cells_dict, tri_element=FEMOL.elements.T3)
     # Scale the points
     mesh.points *= R
-
     return mesh
+
 
 def circle_T6(R, N_ele, order=7):
     """
@@ -640,3 +696,101 @@ def circle_T6(R, N_ele, order=7):
     # Scale the points
     mesh.points *= R
     return mesh
+
+
+def guitar(L=1, lcar=0.05, option='quad', algorithm=1):
+    """
+    2D mesh of a classical guitar soundboard
+    """
+    with pygmsh.geo.Geometry() as geom:
+        # Points on the boundary
+        p0 = (0, 0.38*L)
+        p2 = (0.25*L, 0.76*L)
+        p5 = (0.8175*L, 0.09*L)
+        p7 = (1*L, 0.38*L)
+        # Ellipse 1
+        elc1 = (0.25*L, 0.38*L)
+        elh1 = 0.76*L
+        # Ellipse 2
+        elc2 = (0.8175*L, 0.38*L)
+        elh2 = 0.58*L
+
+        # Left top ellipse
+        elsa1 = geom.add_point(p0, lcar)
+        elce1 = geom.add_point(elc1, lcar)
+        pt = (elc1[0], elc1[1] + elh1 / 2)
+        elax1 = geom.add_point(pt, lcar)
+        elso1 = geom.add_point(p2, lcar)
+        ell1 = geom.add_ellipse_arc(elsa1, elce1, elax1, elso1)
+
+        # Top guitar side 1
+        p1 = FEMOL.domains.create_polynomial(0.25*L, 0.76*L, 0.625*L, (0.71225 - 0.1645 / 2)*L, 0)
+        x1 = np.linspace(0.25*L, 0.625*L, 10)
+        y1 = p1[0] * x1 ** 3 + p1[1] * x1 ** 2 + p1[2] * x1 + p1[3]
+        points = [(xi, yi) for xi, yi in zip(x1, y1)]
+        spli1_points = [elso1]
+        for pt in points[1:]:
+            spli1_points.append(geom.add_point(pt, lcar))
+        spli1 = geom.add_spline(spli1_points)
+
+        # Top guitar side 2
+        p2 = FEMOL.domains.create_polynomial(0.625*L, (0.71225 - 0.1645 / 2)*L, 0.8175*L, 0.67*L, 0)
+        x2 = np.linspace(0.625*L, 0.8175*L, 10)
+        y2 = p2[0] * x2 ** 3 + p2[1] * x2 ** 2 + p2[2] * x2 + p2[3]
+        points = [(xi, yi) for xi, yi in zip(x2, y2)]
+        spli2_points = [spli1_points[-1]]
+        for pt in points[1:]:
+            spli2_points.append(geom.add_point(pt, lcar))
+        spli2 = geom.add_spline(spli2_points)
+
+        # Left top ellipse
+        elce2 = geom.add_point(elc2, lcar)
+        pt = (elc2[0], elc2[1] + elh2 / 2)
+        elax2 = geom.add_point(pt, lcar)
+        elso2 = geom.add_point(p7, lcar)
+        ell2 = geom.add_ellipse_arc(spli2_points[-1], elce2, elax2, elso2)
+
+        # Left bottom ellipse
+        elso3 = geom.add_point(p5, lcar)
+        ell3 = geom.add_ellipse_arc(elso2, elce2, elax2, elso3)
+
+        # Bottom side 1
+        p3 = FEMOL.domains.create_polynomial(0.625*L, (0.04775 + 0.1645 / 2)*L, 0.8175*L, 0.09*L, 0)
+        x3 = np.linspace(0.8175, 0.625, 10)
+        y3 = p3[0] * x3 ** 3 + p3[1] * x3 ** 2 + p3[2] * x3 + p3[3]
+        points = [(xi, yi) for xi, yi in zip(x3, y3)]
+        spli3_points = [elso3]
+        for pt in points[1:]:
+            spli3_points.append(geom.add_point(pt, lcar))
+        spli3 = geom.add_spline(spli3_points)
+
+        # Bottom side 2
+        p4 = FEMOL.domains.create_polynomial(0.25*L, 0, 0.625*L, (0.04775 + 0.1645 / 2)*L, 0)
+        x4 = np.linspace(0.625*L, 0.25*L, 10)
+        y4 = p4[0] * x4 ** 3 + p4[1] * x4 ** 2 + p4[2] * x4 + p4[3]
+        points = [(xi, yi) for xi, yi in zip(x4, y4)]
+        spli4_points = [spli3_points[-1]]
+        for pt in points[1:]:
+            spli4_points.append(geom.add_point(pt, lcar))
+        spli4 = geom.add_spline(spli4_points)
+
+        # Left bottom ellipse
+        ell4 = geom.add_ellipse_arc(spli4_points[-1], elce1, elax1, elsa1)
+
+        # Guitar outline curve loop
+        loop1 = geom.add_curve_loop([ell1, spli1, spli2, ell2, ell3, spli3, spli4, ell4])
+
+        # Soundhole
+        hole = geom.add_circle([0.673*L, 0.38*L], 0.175*L / 2, lcar, make_surface=False)
+        loop2 = geom.add_curve_loop(hole.curve_loop.curves)
+
+        s1 = geom.add_plane_surface(loop1, [loop2])
+
+        if option == 'quad':
+            geom.set_recombined_surfaces([s1])
+        elif option == 'triangle':
+            pass
+        mesh = geom.generate_mesh(algorithm=algorithm)
+
+    FEMOL_mesh = FEMOL.Mesh(mesh.points, mesh.cells_dict)
+    return FEMOL_mesh

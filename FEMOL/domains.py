@@ -1,5 +1,5 @@
 import numpy as np
-from scipy.optimize import fsolve
+from scipy.optimize import fsolve, broyden1
 
 """
 Domain functions that create domains that can be applied to meshes
@@ -7,6 +7,7 @@ __________________________________________________________________
 domain = FEMOL.domain.domain_creator_function(args)
 nodes_in_domain = Mesh.domain_nodes(domain)
 """
+
 
 def inside_box(xs, ys):
     def domain(x, y):
@@ -31,6 +32,7 @@ def inside_box(xs, ys):
 
     return domain
 
+
 def outside_box(x1, x2, y1, y2):
     """
     Returns  a domain outside a defined box
@@ -42,6 +44,7 @@ def outside_box(x1, x2, y1, y2):
 
     return box
 
+
 def inside_circle(x_pos, y_pos, R):
     """
     Creates a domain inside a circle
@@ -50,9 +53,7 @@ def inside_circle(x_pos, y_pos, R):
     x_pos, y_pos : position of the center
     R : circle radius
 
-    Returns : Inside circle domain
-    -------
-
+    :return Inside circle domain
     """
     def circle(x, y):
 
@@ -62,6 +63,7 @@ def inside_circle(x_pos, y_pos, R):
             return False
 
     return circle
+
 
 def outside_circle(x_pos, y_pos, R):
     """
@@ -83,14 +85,17 @@ def outside_circle(x_pos, y_pos, R):
             return False
     return circle
 
+
 def create_polynomial(x1, y1, x2, y2, p1=0, p2=None):
     """
     Creates a 3rd order polynomial between points 1 and 2 with slope p and -p
+    :rtype: list
+    :param p2: Slope at point 2
+    :param p1: Slope at point 1
     :param x1: first point x
     :param y1: first point y
     :param x2: second point x
     :param y2: second point y
-    :param p: slope at point 1
     :return: a, b, c, d parameters such as y = ax^3 + bx^2 +cx +d
     """
     if p2 is None:
@@ -104,9 +109,101 @@ def create_polynomial(x1, y1, x2, y2, p1=0, p2=None):
         eq4 = 3 * a * x2 ** 2 + 2 * b * x2 + c - p2
         return eq1, eq2, eq3, eq4
 
-    a, b, c, d = fsolve(equations, (1, 1, 1, 1))
+    return fsolve(equations, np.array([1, 1, 1, 1]))
 
-    return a, b, c, d
+
+def outside_ellipse(center, start, stop, eps=1e-3):
+    """function creating a domain function representing the domain outside an ellipse"""
+    # Get the ellipse center and points
+    h, k = center
+    x1, y1 = start
+    x2, y2 = stop
+
+    # Ellipse function to find the axis dimensions
+    def ellipse(x):
+        s1 = (x1 - h) ** 2 / x[0] ** 2 + (y1 - k) ** 2 / x[1] ** 2 - 1
+        s2 = (x2 - h) ** 2 / x[0] ** 2 + (y2 - k) ** 2 / x[1] ** 2 - 1
+        return [s1, s2]
+
+    # Axis dimension
+    sol = broyden1(ellipse, center)
+    a, b = sol
+
+    # Ellipse domain function
+    def domain(x, y):
+
+        Ri = (x - h) ** 2 / (a - eps) ** 2 + (y - k) ** 2 / (b - eps) ** 2
+
+        if Ri < 1:
+            return False
+        else:
+            return True
+
+    return domain
+
+
+def outside_guitar(L):
+    """ Function creating a domain function for the guitar boundary"""
+
+    # Left ellipse
+    elsa1 = (0, 0.38 * L)
+    elso1 = (0.25 * L, 0.76 * L)
+    elc1 = (0.25 * L, 0.38 * L)
+    ellipse1 = outside_ellipse(elc1, elsa1, elso1)
+
+    # Right ellipse
+    elc2 = (0.8175 * L, 0.38 * L)
+    elsa2 = (0.8175 * L, 0.09)
+    elso2 = (1, 0.38 * L)
+    ellipse2 = outside_ellipse(elc2, elsa2, elso2)
+
+    # Top and bottom curves
+    # Top side 1
+    p1 = create_polynomial(0.25 * L, 0.76 * L, 0.625 * L, (0.71225 - 0.1645 / 2) * L, 0)
+    # Top side 2
+    p2 = create_polynomial(0.625 * L, 0.71225 - 0.1645 / 2, 0.8175 * L, 0.67, 0)
+    # Bottom side 1
+    p3 = create_polynomial(0.25 * L, 0, 0.625 * L, (0.04775 + 0.1645 / 2) * L, 0)
+    # Bottom side 2
+    p4 = create_polynomial(0.625 * L, 0.04775 + 0.1645 / 2, 0.8175 * L, 0.09, 0)
+
+    def top(x):
+        if (x > 0.25 * L) & (x <= 0.625 * L):
+            return p1[0] * x ** 3 + p1[1] * x ** 2 + p1[2] * x + p1[3]
+        elif (x > 0.625 * L) & (x < 0.8175 * L):
+            return p2[0] * x ** 3 + p2[1] * x ** 2 + p2[2] * x + p2[3]
+        elif x <= 0.25 * L:
+            return 0.76 * L
+        elif x >= 0.8175 * L:
+            return 0.67 * L
+
+    def bottom(x):
+        if (x > 0.25 * L) & (x <= 0.625 * L):
+            return p3[0] * x ** 3 + p3[1] * x ** 2 + p3[2] * x + p3[3]
+        elif (x > 0.625 * L) & (x < 0.8175 * L):
+            return p4[0] * x ** 3 + p4[1] * x ** 2 + p4[2] * x + p4[3]
+        elif x <= 0.25 * L:
+            return 0
+        elif x >= 0.8175 * L:
+            return 0.09 * L
+
+    def sides(x, y):
+        if (x >= 0.25 * L) & (x <= 0.8175 * L):
+            if (y > top(x) - (1e-3 / L)) | (y < bottom(x) + (1e-3 / L)):
+                return True
+            else:
+                return False
+        else:
+            return True
+
+    def domain(x, y):
+        if ellipse1(x, y) & ellipse2(x, y) & sides(x, y):
+            return True
+        else:
+            return False
+
+    return domain
+
 
 def guitar_domain(Lx, Ly):
     """
@@ -116,7 +213,7 @@ def guitar_domain(Lx, Ly):
     Lx : Mesh dim x
     Ly : Mesh dim y
 
-    Returns : Guitar domain true outside the guitar
+    :return : Guitar domain true outside the guitar
     -------
     """
     def guitar_sides(Lx, Ly):

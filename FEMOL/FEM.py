@@ -34,7 +34,7 @@ class FEM_Problem(object):
     """
     dof_dict = {'plane': 2, 'plate': 6}
 
-    def __init__(self, physics, model, mesh, ):
+    def __init__(self, physics, model, mesh):
         # Store parameters
         self.mesh = mesh
         self.physics = physics
@@ -51,6 +51,7 @@ class FEM_Problem(object):
         self.fixed_ddls = []
         self.forces = []
         self.force_domains = []
+        self.layups = []
         self.F = np.zeros(self.N_dof * self.mesh.N_nodes)
 
     def plot(self):
@@ -128,6 +129,7 @@ class FEM_Problem(object):
                 C_A.append(layup.get_A_FEM())
                 C_D.append(layup.D_mat)
                 C_G.append(layup.G_mat)
+                self.layups.append(layup)
 
             elif material.kind == 'isotropic':
                 thickness = tensor
@@ -218,11 +220,13 @@ class FEM_Problem(object):
         w, v = self._scipy_modal_solve()
         # Transpose the eigen vectors
         v = v.T
-        # Remove Nan values and 0 values
+        # Remove Nan values and 0/negative values
         v = v[~np.isnan(w)]
         w = w[~np.isnan(w)]
         v = v[~np.isclose(w, 0)]
         w = w[~np.isclose(w, 0)]
+        v = v[w > 0]
+        w = w[w > 0]
 
         if verbose:
             print('solved in : ', time.time() - now, ' s')
@@ -248,14 +252,17 @@ class FEM_Problem(object):
         """
         # TODO : Optimize eigenvalue solver (sparse + driver)
         # Solve the eigenvalue problem
-        w, v = scipy.linalg.eigh(self.K.toarray(), self.M.toarray())
+        try:
+            w, v = scipy.linalg.eigh(self.K.toarray(), self.M.toarray())
+        except scipy.linalg.LinAlgError:
+            w, v = scipy.linalg.eig(self.K.toarray(), self.M.toarray())
         return w, v
 
     def _filter_eigenvalues_0(self, w, v):
         """
         Null filter, place holder for the filter dictionary.
         """
-        if self.N_dof>0:
+        if self.N_dof > 0:
             pass
         return w, v
 
@@ -557,7 +564,7 @@ class FEM_Problem(object):
                     self.element_Ke[cell_type].append(Ke)
                     data = np.append(data, Ke.reshape(-1))
 
-        data = np.append(data, np.ones(self.mesh.empty_nodes.shape[0] * self.N_dof))
+        #data = np.append(data, np.ones(self.mesh.empty_nodes.shape[0] * self.N_dof))
         return data
 
     def _K_unstructured_mesh_data_coating(self, X=None, p=None):
@@ -605,8 +612,6 @@ class FEM_Problem(object):
                     self.element_Ke_coat[cell_type].append(Ke_coat)
                     Ke = Ke_base.flatten() + Ke_coat.flatten()
                     data = np.append(data, Ke)
-
-        data = np.append(data, np.ones(self.mesh.empty_nodes.shape[0] * self.N_dof))
 
         return data
 
@@ -669,7 +674,7 @@ class FEM_Problem(object):
                     self.element_Me[cell_type].append(Me)
                     data = np.append(data, Me.reshape(-1))
 
-        data = np.append(data, np.ones(self.mesh.empty_nodes.shape[0] * self.N_dof))
+        #data = np.append(data, np.ones(self.mesh.empty_nodes.shape[0] * self.N_dof))
         return data
 
     def _M_structured_mesh_data_coat(self, X=None, q=None):
@@ -723,7 +728,7 @@ class FEM_Problem(object):
                     Me_base = element.Me(self.materials[0], self.ho)
                     Me_coat = element.Me(self.materials[1], self.coat_ho)
                     # Store as class attributes
-                    self.element_Me[cell_type].append(Me_base)
+                    self.element_Me_base[cell_type].append(Me_base)
                     self.element_Me_coat[cell_type].append(Me_coat)
                     # Compute the actual element mass matrix and add to sparse matrix data
                     Me = (Me_base + Me_coat  * Xe ** q).flatten()

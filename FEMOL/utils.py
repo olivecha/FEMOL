@@ -4,11 +4,12 @@ import os
 import matplotlib.pyplot as plt
 from matplotlib import animation
 import datetime
-
+from matplotlib import patches
 
 """
 Plot/Validation functions
 """
+
 
 def validate_N_fun():
     """
@@ -44,12 +45,14 @@ def validate_N_fun():
         ax.plot_surface(XI, ETA, Zi[i], color='w')
         plt.title('N'+str(i+1))
 
+
 def plot_circle(pos_x, pos_y, r):
     ax = plt.gca()
     theta = np.linspace(0, 2*np.pi, 200)
     x = pos_x + r*np.cos(theta)
     y = pos_y + r*np.sin(theta)
     ax.plot(x, y, color='k')
+
 
 def plot_arc(x0, x1, pos_x, pos_y, r, side):
     ax = plt.gca()
@@ -61,6 +64,7 @@ def plot_arc(x0, x1, pos_x, pos_y, r, side):
     if side == 'upper':
         ax.plot(x, y1_2, color='k')
 
+
 def plot_arc2(sta, c, sto, flip1=-1, flip2=1):
     r = np.sqrt((sta[0] - c[0])**2 + (sta[1] - c[1])**2)
     A1 = np.arctan2( sta[1] - c[1], sta[0] - c[0])
@@ -71,9 +75,16 @@ def plot_arc2(sta, c, sto, flip1=-1, flip2=1):
     ax = plt.gca()
     ax.plot(x, y, color='k')
 
+
+def plot_ellipse_arc():
+    # TODO
+    pass
+
+
 def plot_line(p1, p2):
     ax = plt.gca()
     ax.plot([p1[0], p2[0]], [p1[1], p2[1]], color='k')
+
 
 def guitar_domain_figure():
     """
@@ -126,6 +137,7 @@ def guitar_domain_figure():
     ax.set_axis_off()
     plt.show()
 
+
 def guitar_outline(Lx, Ly):
     """
     Plots the figure corresponding to a definition of the guitar domain
@@ -160,9 +172,45 @@ def guitar_outline(Lx, Ly):
     # Soundhole
     plot_circle(2*Lx/3, Ly/2, Ly/7)
 
+
+def guitar_outline2(L):
+    ax = plt.gca()
+    ax.set_aspect('equal')
+    #TODO : Use ellipse arcs
+    ellipse1 = patches.Ellipse((0.25 * L, 0.38 * L), 0.50 * L, 0.76 * L, fill=False)
+    ellipse4 = patches.Ellipse((0.8175 * L, 0.38 * L), 0.365 * L, 0.58 * L, fill=False)
+    ax.add_patch(ellipse1)
+    ax.add_patch(ellipse4)
+    # Top 1
+    p = FEMOL.domains.create_polynomial(0.25 * L, 0.76 * L, 0.625 * L, (0.71225 - 0.1645 / 2) * L, 0)
+    x = np.linspace(0.25 * L, 0.625 * L, 100)
+    y = p[0] * x ** 3 + p[1] * x ** 2 + p[2] * x + p[3]
+    ax.plot(x, y, color='k')
+
+    # Top 2
+    p = FEMOL.domains.create_polynomial(0.625 * L, 0.71225 - 0.1645 / 2, 0.8175 * L, 0.67, 0)
+    x = np.linspace(0.625, 0.8175, 100)
+    y = p[0] * x ** 3 + p[1] * x ** 2 + p[2] * x + p[3]
+    ax.plot(x, y, color='k')
+    # Bot 1
+    p = FEMOL.domains.create_polynomial(0.625 * L, 0.04775 + 0.1645 / 2, 0.8175 * L, 0.09, 0)
+    x = np.linspace(0.625, 0.8175, 100)
+    y = p[0] * x ** 3 + p[1] * x ** 2 + p[2] * x + p[3]
+    ax.plot(x, y, color='k')
+    # Bot 2
+    p = FEMOL.domains.create_polynomial(0.25 * L, 0, 0.625 * L, (0.04775 + 0.1645 / 2) * L, 0)
+    x = np.linspace(0.25 * L, 0.625 * L, 100)
+    y = p[0] * x ** 3 + p[1] * x ** 2 + p[2] * x + p[3]
+    ax.plot(x, y, color='k')
+    # Soundhole
+    FEMOL.utils.plot_circle(0.673 * L, 0.38 * L, 0.175 * L / 2)
+
+
 """
 File management
 """
+
+
 def unique_time_string():
     """
     Returns a unique date_time string to create filenames
@@ -170,6 +218,7 @@ def unique_time_string():
     date = str(datetime.datetime.now().date())
     time = str(datetime.datetime.now().time())[:-7].replace(':', '_')
     return date + '_' + time
+
 
 def count_lines(start, lines=0, header=True, begin_start=None):
     if header:
@@ -201,6 +250,7 @@ def count_lines(start, lines=0, header=True, begin_start=None):
 
     return lines
 
+
 def project_lines():
     dirs = ['FEMOL/', 'Examples/', 'test/']
     lines = 0
@@ -209,9 +259,11 @@ def project_lines():
 
     return lines
 
+
 """
 Vibration videos
 """
+
 
 def modal_dance(mesh, eigen_vectors, filename):
     x, y = mesh.CORG.transpose()
@@ -266,6 +318,7 @@ def modal_dance(mesh, eigen_vectors, filename):
     # Save the animation
     ani.save(filename + '.mp4')
 
+
 def first_4_modes(mesh, filename, eigen_vectors, scale=40):
     x, y = mesh.CORG.transpose()
     x = np.unique(x)
@@ -316,6 +369,7 @@ def first_4_modes(mesh, filename, eigen_vectors, scale=40):
 """
 Modal analysis 
 """
+
 
 def MAC(v1, v2):
     """

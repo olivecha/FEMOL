@@ -56,7 +56,7 @@ class MyTestCase(unittest.TestCase):
         problem2 = FEMOL.FEM_Problem(mesh=mesh, physics='modal', model='plane')
 
         problem1.define_materials(aluminium, aluminium)
-        problem1.define_tensors(thickness, thickness)
+        problem1.define_tensors(thickness/2, thickness/2)
 
         problem2.define_materials(aluminium)
         problem2.define_tensors(thickness)
@@ -72,7 +72,7 @@ class MyTestCase(unittest.TestCase):
         w2, _ = problem2.solve(filtre=2)
 
         self.assertTrue(np.allclose(w1[:10], w2[:10]))
-        self.assertFalse(np.allclose(problem1.M.toarray(), problem2.M.toarray()))
+        self.assertTrue(np.allclose(problem1.M.toarray(), problem2.M.toarray()))
 
     def test_T3_Q4_elements_comparison(self):
         """
@@ -90,6 +90,27 @@ class MyTestCase(unittest.TestCase):
             wi, v = problem.solve(filtre=0, verbose=False)
             w.append(wi)
         self.assertTrue(np.allclose(w[0][:15] - w[1][:15], 0, atol=1e-1))
+
+    def test_eigenvalue_filter(self):
+        """
+        Test the eigenvalue filter of the modal solver
+        """
+        # Problem with questionable stability
+        mesh = FEMOL.mesh.rectangle_Q4(1, 1, 15, 15)
+        # laminates and materials
+        plies1 = [0, 0, 0, 0]
+        plies2 = [90, 90]
+        flax = FEMOL.materials.general_flax()
+        carbon = FEMOL.materials.general_carbon()
+        layup1 = FEMOL.laminate.Layup(material=flax, plies=plies1, symetric=True)
+        layup2 = FEMOL.laminate.Layup(material=carbon, plies=plies2, symetric=True, h_core=layup1.h / 2 + 0.010)
+        # FEM problem definition
+        problem = FEMOL.FEM_Problem(mesh=mesh, physics='modal', model='plate')
+        problem.define_materials(flax, carbon)
+        problem.define_tensors(layup1, layup2)  # thick=1
+        # First modal solve
+        w, v = problem.solve(filtre=0)
+        self.assertFalse(np.isnan(w[0]))
 
 if __name__ == '__main__':
     unittest.main()

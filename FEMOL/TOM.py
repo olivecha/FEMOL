@@ -2,13 +2,15 @@ import FEMOL.utils
 import FEMOL.elements
 # Numpy
 import numpy as np
-
+# Scipy
+from scipy.interpolate import interp1d
 # Matplotlib
 import matplotlib.pyplot as plt
 # Ipython
 from IPython.display import clear_output
 
 __all__ = ['SIMP_COMP', 'SIMP_VIBE']
+
 
 class SIMP_COMP(object):
     """
@@ -375,7 +377,7 @@ class SIMP_VIBE(object):
         self.X = {key: np.ones(self.mesh.cells[key].shape[0]) * volfrac for key in self.mesh.contains}
         self.lmbds = []
 
-    def solve(self, v_ref,  converge=0.01, max_iter=100, plot=True, save=True):
+    def solve(self, v_ref,  converge=0.01, min_iter=1, max_iter=100, plot=True, save=True):
         """
                SIMP Optimization solver
                :param converge: Convergence for density
@@ -388,8 +390,9 @@ class SIMP_VIBE(object):
         # Loop parameters
         self.change = 1
         self.loop = 0
+        not_solved = True
 
-        while (self.change > converge) & (self.loop < max_iter):
+        while not_solved:
             # Iterate
             self.loop += 1
 
@@ -421,6 +424,13 @@ class SIMP_VIBE(object):
                                                                                     va = self.change,
                                                                                     eg = self.lmbd)
                 print(info)
+
+            if (self.change < converge) and (self.loop > min_iter):
+                not_solved = False
+            elif self.loop == max_iter:
+                not_solved = False
+
+        self.mesh = self.density_to_core_height()
 
         if save:
             self._save_TOM_result()
@@ -462,35 +472,37 @@ class SIMP_VIBE(object):
         # Flatten the X array
         X = np.hstack([X[cell_type] for cell_type in self.mesh.contains])
 
-	# Find the lagrange multiplier
+    # Find the lagrange multiplier
         while (l2 - l1) > 1e-4:
-	    # Bijection algorith
+        # Bijection algorithm
             lmid = 0.5 * (l1 + l2)
-	    # Move by an increment
+        # Move by an increment
             X1 = X + move
-	    # Multiply by the sensibility
-            X2 = X * (np.max([np.zeros(self.mesh.N_ele), self.dlmbd]) / lmid) ** 0.3
-	    # Take the min between move and sensibilities
+        # remove negative values
+            self.dlmbd[self.dlmbd<0] = 0
+        # Multiply by the sensibility
+            X2 = X * (self.dlmbd / lmid) ** 0.3
+        # Take the min between move and sensibilities
             X_new = np.min([X1, X2], axis=0)
-	    # Remove value higher than one
+        # Remove value higher than one
             X_new = np.min([np.ones(self.mesh.N_ele), X_new], axis=0)
-	    # Do a negative move
+        # Do a negative move
             X_new = np.max([X - move, X_new], axis=0)
             # Remove the values lower than the threshold
             X_new = np.max([0.001 * np.ones(self.mesh.N_ele), X_new], axis=0)
 
-	    # Add matter where the domain is constrained to be solid
+        # Add matter where the domain is constrained to be solid
             if hasattr(self, 'solid_domain'):
                 X_new = self._apply_solid_domain(self.solid_domain, X_new)
-	    # Remove matter where the domain is constrained to be void
+        # Remove matter where the domain is constrained to be void
             if hasattr(self, 'void_domain'):
                 X_new = self._apply_void_domain(self.void_domain, X_new)
-	    # Do the bijection
+        # Do the bijection
             if (np.sum(X_new) - self.f * self.mesh.N_ele) > 0:
                 l1 = lmid
             else:
                 l2 = lmid
-	    # Reshape X into a cell dict
+        # Reshape X into a cell dict
             X_new = np.split(X_new, [self.mesh.cells[self.mesh.contains[0]].shape[0]])
             X_new = {key: Xi for (key, Xi) in zip(self.mesh.contains, X_new)}
 
@@ -575,7 +587,7 @@ class SIMP_VIBE(object):
         w, v = self.FEM.solve(verbose=False, filtre=0)
         mac = [FEMOL.utils.MAC(vi, v_ref) for vi in v]
         i = np.argmax(mac)
-        return w[i]**2, v[i]
+        return w[i], v[i]
 
     def _solid_max_eigs_objective_function(self, X):
         """
@@ -610,7 +622,7 @@ class SIMP_VIBE(object):
             dlmbd = []
             for cell_type in self.mesh.contains:
                 for ele, xe, Ke, Me in zip(self.mesh.cells[cell_type], X[cell_type],
-                                           self.FEM.element_Ke, self.FEM.element_Me):
+                                           self.FEM.element_Ke[cell_type], self.FEM.element_Me[cell_type]):
                     # Empty localized eigenvector
                     Ve = np.array([])
                     # Add the component according to the element nodes
@@ -623,8 +635,75 @@ class SIMP_VIBE(object):
             return self.lmbd, np.array(dlmbd)
 
     def _coating_max_eigs_objective_function(self, X):
-        raise NotImplementedError
+        """
+        Maximize eigenvalue objective function
+        """
+        # If the problem mesh is structured
+        if self.mesh.structured:
+            dlmbd = []
+            # Constant element matrices
+            Kc = self.mesh.element.Ke(self.FEM.coat_C_A, self.FEM.coat_C_D, self.FEM.coat_C_G)
+            Mc = self.mesh.element.Me(self.FEM.materials[1], self.FEM.coat_ho)
+
+            # Loop over every element
+            for ele, xe in zip(self.mesh.cells[self.mesh.contains[0]], X[self.mesh.contains[0]]):
+                Ve = np.array([])
+
+                # Get the displacement from the four nodes
+                for node in ele:
+                    Ve = np.append(Ve, self.v[self.FEM.N_dof * node:self.FEM.N_dof * node + self.FEM.N_dof])
+
+                # Objective function
+
+                # Sensibility to the Objective function
+                dlmbd.append(Ve.T @ (self.p * xe ** (self.p - 1) * Kc
+                                     - self.lmbd * self.q * xe ** (self.q - 1) * Mc) @ Ve)
+
+            return self.lmbd, np.array(dlmbd)
+
+        # If the mesh is not structured
+        if not self.mesh.structured:
+
+            dlmbd = []
+            for cell_type in self.mesh.contains:
+                for ele, xe, Kc, Mc in zip(self.mesh.cells[cell_type], X[cell_type],
+                                           self.FEM.element_Ke_coat[cell_type], self.FEM.element_Me_coat[cell_type]):
+                    # Empty localized eigenvector
+                    Ve = np.array([])
+                    # Add the component according to the element nodes
+                    for node in ele:
+                        Ve = np.append(Ve, self.v[self.FEM.N_dof * node:self.FEM.N_dof * node + self.FEM.N_dof])
+
+                    dlmbd.append(Ve.T @ (self.p * xe ** (self.p - 1) * Kc
+                                         - self.lmbd * self.q * xe ** (self.q - 1) * Mc) @ Ve)
+            return self.lmbd, np.array(dlmbd)
 
     def _solid_min_eigs_objective_function(self, X):
         raise NotImplementedError
 
+    def density_to_core_height(self):
+        """Export the density values results to core height values"""
+
+        # Create the height/stiffness vectors
+        layup = self.FEM.layups[1]
+        zmin = layup.hA / 2
+        zmax = layup.zc - layup.hA / 2
+        zcoords = np.linspace(zmin, zmax)
+        D_list = []
+        plies = layup.plies
+        for z in zcoords:
+            layup_t = FEMOL.Layup(plies=plies, material=layup.mtr, symetric=False, h_core=0, z_core=z)
+            D_list.append(layup_t.D_mat[0, 0])
+
+        # Create the X vector for interpolation
+        X_interp = np.array(D_list) / D_list[-1]
+        # Create the interpolator
+        core_height_interp = interp1d(X_interp, zcoords)
+        # Compute the core height values
+        zcore = {}
+        for key in self.mesh.cell_data['X']:
+            zcore[key] = core_height_interp(self.mesh.cell_data['X'][key])
+
+        self.mesh.cell_data['zc'] = zcore
+
+        return self.mesh
