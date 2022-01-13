@@ -7,7 +7,7 @@
       <excludeFolder url="file://$MODULE_DIR$/Figures/Benchmarks" />
       <excludeFolder url="file://$MODULE_DIR$/test/.pytest_cache/v" />
     </content>
-    <orderEntry type="jdk" jdkName="Python 3.8 (FEMOL)" jdkType="Python SDK" />
+    <orderEntry type="jdk" jdkName="Python 3.9 (FEMOL)" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
   </component>
 </module>

@@ -5,3 +5,4 @@ meshio
 meshzoo == 0.8.0
 IPython
 pytest
+pygmsh

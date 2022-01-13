@@ -1,6 +1,45 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
+class Element(object):
+    """
+    Genereal FEMOL element class
+    """
+    # Number of nodes for the element
+    N_nodes = 0
+    # First order integration points and weights
+    integration_points_1 = [(0, 0)]
+    integration_weights_1 = [0]
+    # Second order integration points and weights
+    integration_points_2 = [(0, 0), (0, 0), (0, 0), (0, 0)]
+    integration_weights_2 = [0, 0, 0, 0]
+    # Third order integration points and weights
+    integration_points_3 = [(0, 0), (0, 0), (0, 0), (0, 0), (0, 0), (0, 0)]
+    integration_weights_3 = [0, 0, 0, 0, 0, 0]
+    # Generalised coordinates shape function
+    @staticmethod
+    def shape(xi, eta):
+        return None
+    # Generalized coordinates shape function derivatives
+    @staticmethod
+    def dshape_dxi(xi, eta):
+        return None
+    @staticmethod
+    def dshape_deta(xi, eta):
+        return None
+
+    def __init__(self, points, Ndof):
+        """
+        Element class constructor
+        :param points: nodes coordinates of the element
+        :param Ndof: nodes degrees of freedom of the element
+        """
+        self.x, self.y = points.transpose()[:2]  # 2D only
+        self.N_dof = Ndof
+        self.size = self.N_nodes * self.N_dof
+
+
+
 
 class T3(object):
     """
@@ -559,7 +598,7 @@ class T6(object):
             G = T
             Kp, Kb, Ks = 0, 0, 0
 
-            # 2nd order gauss integration for the plane and bending terms
+            # 3nd order gauss integration for the plane and bending terms
             for pt, w in zip(self.integration_points_3, self.integration_weights_3):
                 # Plane stress strain matrix
                 Bp = self.plane_B_matrix(*pt)
@@ -571,7 +610,7 @@ class T6(object):
                 Kp += w*(Bp.T @ C @ Bp * det_J)
                 Kb += w*(Bb.T @ D @ Bb * det_J)
 
-            # 1st order gauss integration for the shear term
+            # 2nd order gauss integration for the shear term
             for pt, w in zip(self.integration_points_2, self.integration_weights_2):
                 # Shear strain matrix
                 Bs = self.shear_B_matrix(*pt)
@@ -608,7 +647,7 @@ class T6(object):
             y_points = shape.T @ self.y
 
             # Mass tensor
-            V = 0.5 * np.identity(2) * material.rho * thickness
+            V = 0.45 * np.identity(2) * material.rho * thickness
 
             # Integrate to find the element mass matrix
             Me = 0

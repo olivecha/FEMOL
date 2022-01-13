@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import matplotlib.tri as tri
 import FEMOL.elements
 import scipy.sparse
+from scipy.interpolate import griddata
 
 
 class Mesh(object):
@@ -19,6 +20,8 @@ class Mesh(object):
         Constructor for the general mesh class
         """
         # Empty point and cell data dict
+        self.element = None
+        self.rows = None
         self.wrap_factor = None
         self.point_data = {}
         self.cell_data = {}
@@ -27,7 +30,7 @@ class Mesh(object):
         # Store the cells and points into the Mesh instance
         self.cells = cell_dict
         if points.shape[1] == 2:
-            points = np.hstack([points, np.zeros((points.shape[0],1))])
+            points = np.hstack([points, np.zeros((points.shape[0], 1))])
         self.points = points
         # Get if the mesh contains triangles, quads or both
         self.contains = [key for key in cell_dict if key in ['triangle', 'quad']]
@@ -129,7 +132,7 @@ class Mesh(object):
         """
         Computes the map between the complete node set and the nodes used in cells
         """
-        full_node_map = [0] + [0]*self.full_nodes[0].astype(int)
+        full_node_map = [0] + [0] * self.full_nodes[0].astype(int)
         for i in range(1, self.full_nodes.shape[0]):
             full_node_map += [i] * (self.full_nodes[i] - self.full_nodes[i - 1])
         full_node_map = np.array(full_node_map)
@@ -200,12 +203,6 @@ class Mesh(object):
         if self.structured:
             self.element = element
 
-        #base_empty_node_range = np.tile(np.arange(N_dof), self.empty_nodes.shape[0])  # [0,...,N_dof]*N_empty_nodes
-        #empty_node_dof_range = N_dof*np.repeat(self.empty_nodes, N_dof)  # [node*N_dof, ..., node*N_dof] *N_empty_nodes
-        #empty_node_indexes = base_empty_node_range + empty_node_dof_range
-
-        #self.rows = np.append(np.hstack(rows), empty_node_indexes)
-        #self.cols = np.append(np.hstack(cols), empty_node_indexes)
         self.rows = np.hstack(rows)
         self.cols = np.hstack(cols)
 
@@ -307,13 +304,13 @@ class Mesh(object):
                     u[1::2] = uy
                     element = self.ElementClasses[celltype](self.points[cell], N_dof=N_dof)
                     if 'X' in self.cell_data.keys():
-                        S.append(element.stress(u, tensors[0] + tensors[0]*self.cell_data['X'][celltype][i]))
+                        S.append(element.stress(u, tensors[0] + tensors[0] * self.cell_data['X'][celltype][i]))
                     else:
                         S.append(element.stress(u, tensors[0]))
 
                 S = np.array(S)
 
-                Sv = np.sqrt(((S[:,0] - S[:,1])**2 + (S[:,1] - S[:,2])**2 + (S[:,2] - S[:,0])**2)/2)
+                Sv = np.sqrt(((S[:, 0] - S[:, 1]) ** 2 + (S[:, 1] - S[:, 2]) ** 2 + (S[:, 2] - S[:, 0]) ** 2) / 2)
                 self.cell_data['Sx'][celltype] = S[:, 0]
                 self.cell_data['Sy'][celltype] = S[:, 1]
                 self.cell_data['Sxy'][celltype] = S[:, 2]
@@ -421,11 +418,52 @@ class Mesh(object):
         y = (p1[1] + p2[1]) / 2
         return np.array([x, y, 0])
 
+    def cell_to_point_data(self, which):
+        """Converts cell data to point data by linear interpolation"""
+        # Get all the cell values
+        values = np.hstack([val for val in self.cell_data[which].values()])
+        # Get the points at cell centers
+        cell_points = np.hstack([pts for pts in self.cell_centers.values()])
+        # Linear interpolation of the points
+        data_linear = griddata(cell_points, values, self.points[:, :2], method='linear')
+        # Nearest interpolation for the points on the boundaries
+        data_nearest = griddata(cell_points, values, self.points[:, :2], method='nearest')
+        # Use the nearest value when linear is Nan
+        data = data_linear
+        data[np.isnan(data)] = data_nearest[np.isnan(data)]
+        # Add to the mesh point data
+        self.point_data[which] = data
+
+    def point_data_to_STL(self, filename, which, factor=1):
+        """ Creates a 3D STL mesh where the z coordinate is the point data"""
+        # TODO fix the boundary so that the STL is water tight
+        # Get two copies of the mesh nodes points
+        points1 = self.points.copy()
+        points2 = self.points.copy()
+        # First points z = point data
+        points1[:, 2] = self.point_data[which]
+        # Second points z = 0
+        points2[:, 2] = 0
+        # Combine into all the points
+        points = np.vstack([points1, points2])
+        # Get all the mesh cells converted to triangles
+        tris1 = self.plot.all_tris.copy()
+        tris2 = self.plot.all_tris.copy()
+        # Flip the triangles underneath
+        tris2[:, 1:] = np.flip(tris1, axis=1)
+        # Add to the point indexes so they refer to new points
+        tris2 += tris2.max() + 1
+        tris = np.vstack([tris1, tris2])
+        cells = [('triangle', tris)]
+        meshio_mesh = meshio.Mesh(points * factor, cells)
+        meshio_mesh.write(filename + '.stl')
+
 
 class MeshPlot(object):
     """
     General class for plotting FEM results on meshes
     """
+
     def __init__(self, mesh, backend='matplotlib'):
         self.mesh = mesh
         self.backend = backend
@@ -485,9 +523,9 @@ class MeshPlot(object):
             all_cell_data = self.mesh.cell_data[which]
             all_cell_data = np.hstack([all_cell_data[cell_type] for cell_type in self.mesh.contains])
             if all_cell_data.max() > all_cell_data.min():
-                all_cell_data = (all_cell_data - all_cell_data.min())/(all_cell_data.max() - all_cell_data.min())
+                all_cell_data = (all_cell_data - all_cell_data.min()) / (all_cell_data.max() - all_cell_data.min())
             elif all_cell_data.max() != 0:
-                all_cell_data = all_cell_data/all_cell_data.max()
+                all_cell_data = all_cell_data / all_cell_data.max()
 
             for cell_type in self.mesh.contains:
                 current_cell_size = self.mesh.cells[cell_type].shape[0]
@@ -584,6 +622,7 @@ class MeshPlot(object):
             T3_cells_group.append(T3_cells)
 
         self.all_tris = np.concatenate(T3_cells_group)
+
 
 """
 Mesh manipulation
@@ -704,16 +743,16 @@ def guitar(L=1, lcar=0.05, option='quad', algorithm=1):
     """
     with pygmsh.geo.Geometry() as geom:
         # Points on the boundary
-        p0 = (0, 0.38*L)
-        p2 = (0.25*L, 0.76*L)
-        p5 = (0.8175*L, 0.09*L)
-        p7 = (1*L, 0.38*L)
+        p0 = (0, 0.38 * L)
+        p2 = (0.25 * L, 0.76 * L)
+        p5 = (0.8175 * L, 0.09 * L)
+        p7 = (1 * L, 0.38 * L)
         # Ellipse 1
-        elc1 = (0.25*L, 0.38*L)
-        elh1 = 0.76*L
+        elc1 = (0.25 * L, 0.38 * L)
+        elh1 = 0.76 * L
         # Ellipse 2
-        elc2 = (0.8175*L, 0.38*L)
-        elh2 = 0.58*L
+        elc2 = (0.8175 * L, 0.38 * L)
+        elh2 = 0.58 * L
 
         # Left top ellipse
         elsa1 = geom.add_point(p0, lcar)
@@ -724,8 +763,8 @@ def guitar(L=1, lcar=0.05, option='quad', algorithm=1):
         ell1 = geom.add_ellipse_arc(elsa1, elce1, elax1, elso1)
 
         # Top guitar side 1
-        p1 = FEMOL.domains.create_polynomial(0.25*L, 0.76*L, 0.625*L, (0.71225 - 0.1645 / 2)*L, 0)
-        x1 = np.linspace(0.25*L, 0.625*L, 10)
+        p1 = FEMOL.domains.create_polynomial(0.25 * L, 0.76 * L, 0.625 * L, (0.71225 - 0.1645 / 2) * L, 0)
+        x1 = np.linspace(0.25 * L, 0.625 * L, 10)
         y1 = p1[0] * x1 ** 3 + p1[1] * x1 ** 2 + p1[2] * x1 + p1[3]
         points = [(xi, yi) for xi, yi in zip(x1, y1)]
         spli1_points = [elso1]
@@ -734,8 +773,8 @@ def guitar(L=1, lcar=0.05, option='quad', algorithm=1):
         spli1 = geom.add_spline(spli1_points)
 
         # Top guitar side 2
-        p2 = FEMOL.domains.create_polynomial(0.625*L, (0.71225 - 0.1645 / 2)*L, 0.8175*L, 0.67*L, 0)
-        x2 = np.linspace(0.625*L, 0.8175*L, 10)
+        p2 = FEMOL.domains.create_polynomial(0.625 * L, (0.71225 - 0.1645 / 2) * L, 0.8175 * L, 0.67 * L, 0)
+        x2 = np.linspace(0.625 * L, 0.8175 * L, 10)
         y2 = p2[0] * x2 ** 3 + p2[1] * x2 ** 2 + p2[2] * x2 + p2[3]
         points = [(xi, yi) for xi, yi in zip(x2, y2)]
         spli2_points = [spli1_points[-1]]
@@ -755,7 +794,7 @@ def guitar(L=1, lcar=0.05, option='quad', algorithm=1):
         ell3 = geom.add_ellipse_arc(elso2, elce2, elax2, elso3)
 
         # Bottom side 1
-        p3 = FEMOL.domains.create_polynomial(0.625*L, (0.04775 + 0.1645 / 2)*L, 0.8175*L, 0.09*L, 0)
+        p3 = FEMOL.domains.create_polynomial(0.625 * L, (0.04775 + 0.1645 / 2) * L, 0.8175 * L, 0.09 * L, 0)
         x3 = np.linspace(0.8175, 0.625, 10)
         y3 = p3[0] * x3 ** 3 + p3[1] * x3 ** 2 + p3[2] * x3 + p3[3]
         points = [(xi, yi) for xi, yi in zip(x3, y3)]
@@ -765,8 +804,8 @@ def guitar(L=1, lcar=0.05, option='quad', algorithm=1):
         spli3 = geom.add_spline(spli3_points)
 
         # Bottom side 2
-        p4 = FEMOL.domains.create_polynomial(0.25*L, 0, 0.625*L, (0.04775 + 0.1645 / 2)*L, 0)
-        x4 = np.linspace(0.625*L, 0.25*L, 10)
+        p4 = FEMOL.domains.create_polynomial(0.25 * L, 0, 0.625 * L, (0.04775 + 0.1645 / 2) * L, 0)
+        x4 = np.linspace(0.625 * L, 0.25 * L, 10)
         y4 = p4[0] * x4 ** 3 + p4[1] * x4 ** 2 + p4[2] * x4 + p4[3]
         points = [(xi, yi) for xi, yi in zip(x4, y4)]
         spli4_points = [spli3_points[-1]]
@@ -781,7 +820,7 @@ def guitar(L=1, lcar=0.05, option='quad', algorithm=1):
         loop1 = geom.add_curve_loop([ell1, spli1, spli2, ell2, ell3, spli3, spli4, ell4])
 
         # Soundhole
-        hole = geom.add_circle([0.673*L, 0.38*L], 0.175*L / 2, lcar, make_surface=False)
+        hole = geom.add_circle([0.673 * L, 0.38 * L], 0.175 * L / 2, lcar, make_surface=False)
         loop2 = geom.add_curve_loop(hole.curve_loop.curves)
 
         s1 = geom.add_plane_surface(loop1, [loop2])
@@ -794,3 +833,37 @@ def guitar(L=1, lcar=0.05, option='quad', algorithm=1):
 
     FEMOL_mesh = FEMOL.Mesh(mesh.points, mesh.cells_dict)
     return FEMOL_mesh
+
+
+def prism_mesh(a, b, h):
+    """
+    Creates a 3D prismatic mesh
+    :param a: width
+    :param b: depth
+    :param h: height
+    :return: meshio 3D mesh suitable for STL write
+    """
+    # Create the first rectangle
+    mesh = FEMOL.mesh.rectangle_T3(a, b, 1, 1)
+    # Add a second rectangle to the points
+    points = mesh.points.copy()
+    mesh.points[:, 2] += h
+    all_points = np.vstack([mesh.points, points])
+    # Add the second rectangle to the cells
+    cells = mesh.all_cells.copy()
+    # Flip the triangles so they point downward
+    cells[:, 1:] = np.flip(mesh.all_cells[:, 1:], axis=1)
+    # Make the cells reference the new points
+    cells += cells.max() + 1
+    # Add wall cells surrounding the two rectangles
+    wall_cells = np.array([[4, 5, 0],
+                           [5, 1, 0],
+                           [5, 7, 1],
+                           [7, 3, 1],
+                           [6, 3, 7],
+                           [6, 2, 3],
+                           [4, 2, 6],
+                           [4, 0, 2]])
+    all_cells = np.vstack([mesh.all_cells, cells, wall_cells])
+    meshio_mesh = meshio.Mesh(all_points, [('triangle', all_cells.astype(int))])
+    return meshio_mesh

@@ -159,3 +159,5 @@ def plot_L_outline2():
     FEMOL.utils.plot_arc2([0.135 + R, Rc], [0.152 - Rc, Rc], [0.135 + R - Rc, 0.], flip2=-1, flip1=1)
     # Horizontal line 2
     FEMOL.utils.plot_line([0.135 + R - Rc, 0.], [(0.012 + 0.022) / 2, 0.])
+
+

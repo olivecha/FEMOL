@@ -1,6 +1,7 @@
 import unittest
 import numpy as np
 import FEMOL
+import FEMOL.misc
 import os
 
 class MyTestCase(unittest.TestCase):
@@ -67,6 +68,30 @@ class MyTestCase(unittest.TestCase):
         A = thickness * Ly
         Sx = np.sum(problem.F) / A
         self.assertTrue(np.isclose(mesh.cell_data['Sx']['quad'].max() / thickness, Sx))
+
+    def test_mesh_all_elements_plane_stress(self):
+        mesh_Q4 = FEMOL.mesh.rectangle_Q4(2, 1, 10, 10)
+        mesh_T3 = FEMOL.mesh.rectangle_T3(2, 1, 10, 10)
+        mesh_T6 = FEMOL.mesh.rectangle_T6(2, 1, 10, 10)
+        meshes = [mesh_Q4, mesh_T3, mesh_T6]
+        solved_meshes = []
+
+        for mesh in meshes:
+            problem = FEMOL.FEM_Problem(mesh=mesh, physics='displacement', model='plane')
+            problem.define_materials(FEMOL.materials.general_isotropic())
+            problem.define_tensors(1)
+            problem.add_fixed_domain(FEMOL.domains.inside_box([0], [[0, 1]]))
+            problem.add_forces(force=[0, -1], domain=FEMOL.domains.inside_box([2], [0]))
+            problem.plot()
+
+    def test_pygmsh_mesh(self):
+        mesh = FEMOL.misc.L_bracket_mesh2()
+        problem = FEMOL.FEM_Problem(mesh=mesh, physics='modal', model='plane')
+        material1 = FEMOL.materials.IsotropicMaterial(2e8, 0.3, 2000)
+        problem.define_materials(material1, material1)
+        problem.define_tensors(1, 1)  # thick=1
+        w, v = problem.solve(filtre=0)
+
 
 if __name__ == '__main__':
     unittest.main()
