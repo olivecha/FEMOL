@@ -376,6 +376,8 @@ class SIMP_VIBE(object):
         self.q = q
         self.X = {key: np.ones(self.mesh.cells[key].shape[0]) * volfrac for key in self.mesh.contains}
         self.lmbds = []
+        self.all_lmbds = []
+        self.eigen_vectors = []
 
     def solve(self, v_ref,  converge=0.01, min_iter=1, max_iter=100, plot=True, save=True):
         """
@@ -400,6 +402,7 @@ class SIMP_VIBE(object):
             X_old = self.X
             self.lmbd, self.v = self.FEM_solver(X_old, v_ref=v_ref)
             self.lmbds.append(self.lmbd)
+            self.eigen_vectors.append(self.v)
             self.lmbd, self.dlmbd = self.objective_function(X_old)
             self._filter_sensibility(X_old)
             self.X = self._get_new_x(X_old)
@@ -430,7 +433,10 @@ class SIMP_VIBE(object):
             elif self.loop == max_iter:
                 not_solved = False
 
+        # add the corresponding core height to the mesh
         self.mesh = self.density_to_core_height()
+        # add the density values with penalty
+        self.mesh.cell_data['X_real'] = {'quad': self.mesh.cell_data['X']['quad'] ** 3}
 
         if save:
             self._save_TOM_result()
@@ -479,7 +485,7 @@ class SIMP_VIBE(object):
         # Move by an increment
             X1 = X + move
         # remove negative values
-            self.dlmbd[self.dlmbd<0] = 0
+            self.dlmbd[self.dlmbd < 0] = 0
         # Multiply by the sensibility
             X2 = X * (self.dlmbd / lmid) ** 0.3
         # Take the min between move and sensibilities
@@ -585,6 +591,7 @@ class SIMP_VIBE(object):
         self.FEM.assemble('K', X=X, p=self.p)
         self.FEM.assemble('M', X=X, q=self.q)
         w, v = self.FEM.solve(verbose=False, filtre=0)
+        self.all_lmbds.append(w)
         mac = [FEMOL.utils.MAC(vi, v_ref) for vi in v]
         i = np.argmax(mac)
         return w[i], v[i]
@@ -681,6 +688,35 @@ class SIMP_VIBE(object):
     def _solid_min_eigs_objective_function(self, X):
         raise NotImplementedError
 
+    def density_to_core_height_old(self):
+        """Converts the density values results to core height values"""
+        # Create the height/stiffness vectors
+        layup = self.FEM.layups[1]
+        zmin = layup.hA / 2
+        zmax = layup.zc - layup.hA / 2
+        zcoords = np.linspace(zmin, zmax)
+        D_list = []
+        plies = layup.plies
+        for z in zcoords:
+            layup_t = FEMOL.Layup(plies=plies, material=layup.mtr, symetric=False, h_core=0, z_core=z)
+            D_list.append(layup_t.D_mat[0, 0])
+
+        # Create the X vector for interpolation
+        X_interp = (np.array(D_list) / np.max(D_list))
+        X_interp = np.append([0], X_interp)
+        zcoords = np.append([0], zcoords)
+        # Create the interpolator
+        core_height_interp = interp1d(X_interp, zcoords)
+        self.height_interp = core_height_interp
+        # Compute the core height values
+        zcore = {}
+        for key in self.mesh.cell_data['X']:
+            zcore[key] = core_height_interp(self.mesh.cell_data['X'][key])
+
+        self.mesh.cell_data['zc'] = zcore
+
+        return self.mesh
+
     def density_to_core_height(self):
         """Export the density values results to core height values"""
 
@@ -696,9 +732,12 @@ class SIMP_VIBE(object):
             D_list.append(layup_t.D_mat[0, 0])
 
         # Create the X vector for interpolation
-        X_interp = np.array(D_list) / D_list[-1]
+        X_interp = (np.array(D_list) / np.max(D_list)) ** (1/self.p)
+        X_interp = np.append([0], X_interp)
+        zcoords = np.append([0], zcoords)
         # Create the interpolator
         core_height_interp = interp1d(X_interp, zcoords)
+        self.height_interp = core_height_interp
         # Compute the core height values
         zcore = {}
         for key in self.mesh.cell_data['X']:

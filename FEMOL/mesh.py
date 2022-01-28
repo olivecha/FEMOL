@@ -72,6 +72,9 @@ class Mesh(object):
         all_cells = [nodes for node_list in all_cells for nodes in node_list]
         self.all_cells = np.array(all_cells, dtype=object)
 
+        # Compute the element centers
+        self.compute_element_centers()
+
     def display(self, backend='matplotlib', color='#D1E8FF', plot_nodes=False):
         """
         Plot the mesh using the specified backend
@@ -496,19 +499,23 @@ class MeshPlot(object):
                     y = cell_points.T[1]
                     ax.fill(x, y, color, edgecolor='k', zorder=-1)
 
-    def point_data(self, which, wrapped=True):
+    def point_data(self, which, wrapped=True, cmap=None):
         """
         Plots the displacement colormap on the wrapped mesh
         """
-        if wrapped:
-            self._empty_wrapped_2D()
-            triangulation = tri.Triangulation(*self.mesh.wrapped_points_2D.T, self.mesh.plot.all_tris)
-        else:
-            self._empty_mesh_2D()
-            triangulation = tri.Triangulation(*self.mesh.points.T, self.mesh.plot.all_tris)
-        ax = plt.gca()
-        ax.set_title('{which} point data'.format(which=which))
-        ax.tricontourf(triangulation, self.mesh.point_data[which])
+        try:
+            if wrapped:
+                self._empty_wrapped_2D()
+                triangulation = tri.Triangulation(*self.mesh.wrapped_points_2D.T, self.mesh.plot.all_tris)
+            else:
+                self._empty_mesh_2D()
+                triangulation = tri.Triangulation(*self.mesh.points.T[:2], self.all_tris)
+            ax = plt.gca()
+            ax.set_title('{which} point data'.format(which=which))
+            ax.tricontourf(triangulation, self.mesh.point_data[which], cmap=cmap)
+
+        except AttributeError:
+            self.point_data(which, wrapped=False, cmap=cmap)
 
     def cell_data(self, which, cmap='Greys'):
         """

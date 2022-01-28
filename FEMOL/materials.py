@@ -1,5 +1,6 @@
 import numpy as np
 
+
 class OrthotropicMaterial(object):
     """
     OrthotropicMaterial class for storing material proprieties
