@@ -34,10 +34,17 @@ class Layup(object):
         else:
             self.angles = np.array(plies)
 
+        if (not self.sym) & (len(self.angles)%2 != 0) & (self.hc > 0):
+            print('unable to build layup')
+            raise ValueError
+
         # Get layup thickness
         self.Nb_plies = self.angles.shape[0]
         self.hA = self.Nb_plies * self.mtr.hi
         self.h = self.hA + self.hc
+
+        # Compute the z values
+        self.z_values = self.get_z_values()
 
         # Off-axis Q matrices
         self.Q_off = [self.mtr.Q_mat(angle) for angle in self.angles]
@@ -46,132 +53,106 @@ class Layup(object):
         self.S_off = [self.mtr.S_mat(angle) for angle in self.angles]
 
         # A matrix
-        self.get_A()
+        self.A_mat, self.a_mat = self.get_A(return_a=True)
+
+        # B matrix
+        self.B_mat = self.get_B()
 
         # D matrix
-        self.get_D()
+        self.D_mat, self.d_mat = self.get_D(return_d=True)
 
         # Out of plane shear matrix
         self.get_G()
 
-        # Ply coordinates
-        self.get_zcoord()
-
-    def get_A(self):
+    def get_A(self, return_a=False):
         """
         A matrix computation for a given laminate
         """
-        # Constant U values
-        self.U_1 = (1 / 8) * (3 * self.mtr.Qxx + 3 * self.mtr.Qyy + 2 * self.mtr.Qxy + 4 * self.mtr.Qss)
-        self.U_2 = (1 / 2) * (self.mtr.Qxx - self.mtr.Qyy)
-        self.U_3 = (1 / 8) * (self.mtr.Qxx + self.mtr.Qyy - 2 * self.mtr.Qxy - 4 * self.mtr.Qss)
-        self.U_4 = (1 / 8) * (self.mtr.Qxx + self.mtr.Qyy + 6 * self.mtr.Qxy - 4 * self.mtr.Qss)
-        self.U_5 = (1 / 8) * (self.mtr.Qxx + self.mtr.Qyy - 2 * self.mtr.Qxy + 4 * self.mtr.Qss)
-        self.U = [self.U_1, self.U_2, self.U_3, self.U_4, self.U_5]
+        A_mat = 0
+        # Integral for the bottom of the laminate
+        for j, theta in enumerate(self.angles[:len(self.angles)//2]):
+            zi1 = self.z_values[j]
+            zi2 = self.z_values[j+1]
+            A_mat += self.mtr.Q_mat(theta) * (zi2 - zi1)
 
-        # Vi star Values
-        # thickness of plies is constant (hi)
-        V_1 = sum(np.cos(2 * np.radians(self.angles)) * self.mtr.hi / self.hA)
-        V_2 = sum(np.cos(4 * np.radians(self.angles)) * self.mtr.hi / self.hA)
-        V_3 = sum(np.sin(2 * np.radians(self.angles)) * self.mtr.hi / self.hA)
-        V_4 = sum(np.sin(4 * np.radians(self.angles)) * self.mtr.hi / self.hA)
+        # Integral for the top of the laminate
+        for i, theta in enumerate(self.angles[len(self.angles)//2:]):
+            i += len(self.angles)//2 + 1*(self.hc > 0)
+            zi1 = self.z_values[i]
+            zi2 = self.z_values[i+1]
+            A_mat += self.mtr.Q_mat(theta) * (zi2 - zi1)
 
-        # Vector for matrix product
-        U_vector = [1, self.U_2, self.U_3]
+        if return_a:
+            return A_mat, np.linalg.inv(A_mat)
+        else:
+            return A_mat
 
-        V_mat = np.array([[self.U_1, V_1, V_2],
-                          [self.U_1, -V_1, V_2],
-                          [self.U_4, 0, -V_2],
-                          [self.U_5, 0, -V_2],
-                          [0, 0.5 * V_3, V_4],
-                          [0, 0.5 * V_3, -V_4], ])
-
-        A = self.hA * (V_mat @ U_vector)
-
-        self.A_mat = np.array([[A[0], A[2], A[4]],
-                               [A[2], A[1], A[5]],
-                               [A[4], A[5], A[3]]])
-
-        self.a_mat = np.linalg.inv(self.A_mat)
-
-    def get_D(self):
+    def get_B(self, return_b=False):
         """
-        D matrix for stiffness bending computation
+        B matrix for coupled bending formulation
         """
-        # bottom of the integral
-        h_star_1 = (1/3) * ((-self.hc/2 + self.zc) ** 3 - (-self.h/2 + self.zc)**3)
-        # top of the integral
-        h_star_2 = (1/3) * ((self.h/2 + self.zc)**3 - (self.hc/2 + self.zc) ** 3)
-        # total
-        h_star = h_star_1 + h_star_2
-        self.hstr = h_star
+        B_mat = 0
+        # Integral for the bottom of the laminate
+        for j, theta in enumerate(self.angles[:len(self.angles)//2]):
+            zi1 = self.z_values[j]
+            zi2 = self.z_values[j+1]
+            B_mat += self.mtr.Q_mat(theta) * (zi2**2 - zi1**2) * (1/2)
 
-        # Case with a core
-        if self.hc > 0:
-            lower_z_values = np.arange(-self.h/2, -self.hc/2 + self.mtr.hi, self.mtr.hi) + self.zc
-            upper_z_values = np.arange(self.hc/2, self.h/2 + self.mtr.hi, self.mtr.hi) + self.zc
-            self.z_values = np.hstack([lower_z_values, upper_z_values])
+        # Integral for the top of the laminate
+        for i, theta in enumerate(self.angles[len(self.angles)//2:]):
+            i += len(self.angles)//2 + 1*(self.hc > 0)
+            zi1 = self.z_values[i]
+            zi2 = self.z_values[i+1]
+            B_mat += self.mtr.Q_mat(theta) * (zi2**2 - zi1**2) * (1/2)
 
-            V = np.zeros(4)
-            # Bottom of core
-            for i, angle in enumerate(self.angles[:len(self.angles) // 2]):
-                theta = np.radians(angle)
-                z_i = lower_z_values[i + 1] ** 3 - lower_z_values[i] ** 3
-                V += (1 / 3) * np.array(
-                    [np.cos(2 * theta), np.cos(4 * theta), np.sin(2 * theta), np.sin(4 * theta)]) * z_i
+        if return_b:
+            return B_mat, np.linalg.inv(B_mat)
+        else:
+            return B_mat
 
-            # Top of core
-            for i, angle in enumerate(self.angles[len(self.angles) // 2:]):
-                theta = np.radians(angle)
-                z_i = upper_z_values[i + 1] ** 3 - upper_z_values[i] ** 3
-                V += (1 / 3) * np.array(
-                    [np.cos(2 * theta), np.cos(4 * theta), np.sin(2 * theta), np.sin(4 * theta)]) * z_i
+    def get_D(self, return_d=False):
+        """
+        Alternative computation for D matrix
+        """
+        D_mat = 0
+        # Integral for the bottom of the laminate
+        for j, theta in enumerate(self.angles[:len(self.angles)//2]):
+            zi1 = self.z_values[j]
+            zi2 = self.z_values[j+1]
+            D_mat += self.mtr.Q_mat(theta) * (zi2**3 - zi1**3) * (1/3)
 
-        # case with no core
-        elif self.hc == 0:
-            self.z_values = np.arange(-self.h/2, self.h/2 + self.mtr.hi, self.mtr.hi) + self.zc
+        # Integral for the top of the laminate
+        for i, theta in enumerate(self.angles[len(self.angles)//2:]):
+            i += len(self.angles)//2 + 1*(self.hc > 0)
+            zi1 = self.z_values[i]
+            zi2 = self.z_values[i+1]
+            D_mat += self.mtr.Q_mat(theta) * (zi2**3 - zi1**3) * (1/3)
 
-            V = np.zeros(4)
-            for i, angle in enumerate(self.angles):
-                theta = np.radians(angle)
-                z_i = self.z_values[i + 1] ** 3 - self.z_values[i] ** 3
-                V += (1 / 3) * np.array(
-                    [np.cos(2 * theta), np.cos(4 * theta), np.sin(2 * theta), np.sin(4 * theta)]) * z_i
-
-        self.V = V
-        V1, V2, V3, V4 = V
-
-        U_vec = np.array([h_star, self.U_2, self.U_3])
-
-        U_mat = np.array([[self.U_1,  V1,  V2],
-                          [self.U_1, -V1,  V2],
-                          [self.U_4,   0, -V2],
-                          [self.U_5,   0, -V2],
-                          [0,     0.5*V3,  V4],
-                          [0,     0.5*V3, -V4], ])
-
-        D = U_mat @ U_vec
-
-        self.D_mat = np.array([[D[0], D[2], D[4]],
-                               [D[2], D[1], D[5]],
-                               [D[4], D[5], D[3]]])
-
-        self.d_mat = np.linalg.inv(self.D_mat)
+        if return_d:
+            return D_mat, np.linalg.inv(D_mat)
+        else:
+            return D_mat
 
     def get_G(self):
         """
         Method to compute the shear tensor for a laminate
         """
-        self.G_mat = self.h * np.array([[self.mtr.Gxz, 0],
-                                        [0, self.mtr.Gyz], ])
+        kappa = 5/6
+        self.G_mat = kappa * self.h * np.array([[self.mtr.Gxz, 0],
+                                               [0, self.mtr.Gyz], ])
 
-    def get_zcoord(self):
+    def get_z_values(self):
         """
-        Computes the bottom, middle top for each ply
+        Compute the ply coordinates in the z direction
         """
-        bottom_coords = np.arange(-self.h/2, -self.hc/2 + self.mtr.hi/2, self.mtr.hi/2)
-        top_coords = np.arange(self.hc/2, self.h/2 + self.mtr.hi/2, self.mtr.hi/2)
-        self.zcoord = np.hstack([bottom_coords, top_coords])
+        if self.hc == 0:
+            z_values = np.arange(-self.h/2, self.h/2 + self.mtr.hi/2, self.mtr.hi)
+            return z_values + self.zc
+        elif self.hc > 0:
+            z_values_b = np.arange(-self.h/2, -self.hc/2 + self.mtr.hi/2, self.mtr.hi)
+            z_values_t = np.arange(self.hc/2, self.h/2 + self.mtr.hi/2, self.mtr.hi)
+            z_values = np.hstack([z_values_b, z_values_t])
+            return z_values + + self.zc
 
     def get_A_FEM(self):
         """
@@ -214,4 +195,29 @@ class LayupGenerator(Layup):
         plies = self.layup_angles[np.array(layup_indexes)]
 
         super().__init__(material, plies=plies, symetric=symetric)
+
+
+def porosity(h, w, t, m, phi, rho_f, rho_m):
+    """
+    Computes the porosity of a manufactured laminate using eq. 3 in:
+    Monti, A., El Mahi, A., Jendli, Z., & Guillaumat, L. (2016).
+    Mechanical behaviour and damage mechanisms analysis of a flax-fibre reinforced composite
+    by acoustic emission. Composites Part A: Applied Science and Manufacturing, 90, 100‑110.
+    https://doi.org/10.1016/j.compositesa.2016.07.002
+
+    :param h: height of the part (mm)
+    :param w: width of the part (mm)
+    :param t: thickness of the part (mm)
+    :param m: mass of the part (g)
+    :param phi: theoretical fibre fraction
+    :return: porosity
+    """
+
+    # Compute the volume of the part
+    V = (h*w*t)/1000  # cm^3
+    # Compute the density of the part
+    rho_c = m/V  # g/cm^3
+    # Compute the part porosity
+    void = 1 - rho_c * (phi/rho_f + (1 - phi)/rho_m)
+    return void
 

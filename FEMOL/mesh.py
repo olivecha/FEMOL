@@ -27,6 +27,8 @@ class Mesh(object):
         self.cell_data = {}
         self.cell_centers = {}
         self.ElementClasses = {}
+        self.vertices = {}
+        self.all_vertices = np.empty(shape=(0, 2))
         # Store the cells and points into the Mesh instance
         self.cells = cell_dict
         if points.shape[1] == 2:
@@ -107,6 +109,71 @@ class Mesh(object):
             all_nodes.append(np.unique(self.cells[cell_type].flatten()))
         N_nodes = np.unique(np.concatenate(all_nodes)).shape[0]
         return N_nodes
+
+    def compute_vertices(self):
+        """
+        Computes the vertices of the mesh
+        """
+        self.vertices = {}
+        self.all_vertices = np.empty(shape=(0, 2))
+        for cell_type in self.contains:
+            vertices = []
+            for cell in self.cells[cell_type]:
+                for i, _ in enumerate(cell[:-1]):
+                    vertices.append([cell[i], cell[i + 1]])
+                vertices.append([cell[-1], cell[0]])
+            self.vertices[cell_type] = np.array(vertices, dtype=int)
+            self.all_vertices = np.vstack([self.all_vertices, np.array(vertices, dtype=int)])
+
+    def capture_boundary(self, separate_subsets=False):
+        """
+        Finds the nodes on the boundary of the mesh
+        :param separate_subsets: if true a list of separated boundaries is return
+        :return: boundary nodes (list)
+        """
+        # compute the vertices in the mesh
+        self.compute_vertices()
+        # get the unique vertices
+        unique_vertices, vertices_count = np.unique(np.sort(self.all_vertices), return_counts=True, axis=0)
+        # find the unique vertices (only present in one element)
+        boundary_vertices = unique_vertices[vertices_count == 1]
+        # find the nodes a part of the boundary vertices
+        nodes = boundary_vertices.flatten().astype(int)
+        # if the separated subsets are required, compute them
+        if separate_subsets:
+            # start with the first node
+            node = nodes[0]
+            # empty list to store the groups
+            boundary_groups = []
+            # All the boundary vertices and their flipped copy
+            vertices = np.vstack([boundary_vertices, np.flip(boundary_vertices, axis=1)])
+            while True:
+                try:
+                    # First node of the group is the initial node
+                    current_b_nodes = [node]
+                    while True:
+                        try:
+                            # find the nodes close to this node
+                            close_nodes = vertices[vertices[:, 0] == node][:, 1]
+                            # the next node is the neighbour that is not already in the group
+                            node = close_nodes[~np.isin(close_nodes, current_b_nodes)][0]
+                            # add it to the group
+                            current_b_nodes.append(node)
+                        except IndexError:
+                            # break when no more node is found
+                            break
+                    # store the current group
+                    boundary_groups.append(np.array(current_b_nodes, dtype=int))
+                    # find the next starting node
+                    node = np.array(nodes)[~np.isin(nodes, np.hstack(boundary_groups))][0]
+                except IndexError:
+                    break
+
+            return boundary_groups
+
+        # if not return all the boundary nodes
+        else:
+            return nodes
 
     def clean(self):
         """
@@ -286,7 +353,7 @@ class Mesh(object):
             self.point_data[self.point_variables[dof]] = U[np.arange(dof, len(U), N_dof)]
         self.wrap()
 
-    def stress_from_displacement(self, *tensors, N_dof=2):
+    def stress_from_displacement(self, *tensors, which=None, N_dof=2):
         """
         Computes the stress as cell data for the mesh
         :param tensors: Stiffness tensors
@@ -300,14 +367,21 @@ class Mesh(object):
             for celltype in self.contains:
                 S = []
                 for i, cell in enumerate(self.cells[celltype]):
-                    ux = self.point_data['Ux'][cell]
-                    uy = self.point_data['Uy'][cell]
+                    if which:
+                        ux = self.point_data[which + '_Ux'][cell]
+                        uy = self.point_data[which + '_Uy'][cell]
+                    else:
+                        ux = self.point_data['Ux'][cell]
+                        uy = self.point_data['Uy'][cell]
                     u = np.empty(ux.size * 2)
                     u[::2] = ux
                     u[1::2] = uy
                     element = self.ElementClasses[celltype](self.points[cell], N_dof=N_dof)
                     if 'X' in self.cell_data.keys():
-                        S.append(element.stress(u, tensors[0] + tensors[0] * self.cell_data['X'][celltype][i]))
+                        try:
+                            S.append(element.stress(u, tensors[0] + tensors[1] * (self.cell_data['X'][celltype][i])**3))
+                        except IndexError:
+                            S.append(element.stress(u, tensors[0] * (self.cell_data['X'][celltype][i])**3))
                     else:
                         S.append(element.stress(u, tensors[0]))
 
@@ -437,28 +511,76 @@ class Mesh(object):
         # Add to the mesh point data
         self.point_data[which] = data
 
-    def point_data_to_STL(self, filename, which, factor=1):
+    def point_data_to_STL(self, filename, which, hb=1, hc=0, symmetric=False, scale=1):
         """ Creates a 3D STL mesh where the z coordinate is the point data"""
-        # TODO fix the boundary so that the STL is water tight
         # Get two copies of the mesh nodes points
         points1 = self.points.copy()
         points2 = self.points.copy()
-        # First points z = point data
-        points1[:, 2] = self.point_data[which]
-        # Second points z = 0
-        points2[:, 2] = 0
-        # Combine into all the points
-        points = np.vstack([points1, points2])
+
+        if symmetric:
+            # get the z values from the point data
+            if hc > 0:
+                # if there is a core
+                z_top = hc * self.point_data[which] + 2 * hb + hc
+                z_bot = -hc * (self.point_data[which] - 1)
+            else:
+                # if there is only a base
+                z_top = hb * self.point_data[which] + hb
+                z_bot = -hb * (self.point_data[which] - 1)
+            # points at the top
+            points1[:, 2] = z_top
+            # points at the bottom
+            points2[:, 2] = z_bot
+            # Combine all the points
+            points = np.vstack([points1, points2])
+        else:
+            # get the z values from the point data
+            if hc > 0:
+                # if there is a core
+                z_top = hc * self.point_data[which] + hb
+                z_bot = np.zeros((self.points.shape[0]))
+            else:
+                # if there is only a base
+                z_top = hb * self.point_data[which]
+                z_bot = np.ones((self.points.shape[0])) * self.point_data[which].min()
+
+            # points at the top
+            points1[:, 2] = z_top
+            # points at the bottom
+            points2[:, 2] = z_bot
+            # Combine all the points
+            points = np.vstack([points1, points2])
+
         # Get all the mesh cells converted to triangles
         tris1 = self.plot.all_tris.copy()
         tris2 = self.plot.all_tris.copy()
+
         # Flip the triangles underneath
-        tris2[:, 1:] = np.flip(tris1, axis=1)
+        tris1[:, 1:] = np.flip(tris2[:, 1:], axis=1)
+
         # Add to the point indexes so they refer to new points
-        tris2 += tris2.max() + 1
-        tris = np.vstack([tris1, tris2])
+        tris2 += self.points.shape[0]
+
+        # Fill the boundaries with triangles
+        npts = self.points.shape[0]
+        # get the boundary groups
+        boundary_groups = self.capture_boundary(separate_subsets=True)
+        # add wall triangles for each group
+        tris3 = []
+        for group in boundary_groups:
+            for i, node in enumerate(group[:-1]):
+                tris3.append([node, node + npts, group[i + 1]])
+                tris3.append([group[i + 1], node + npts, group[i + 1] + npts])
+            tris3.append([group[-1], group[-1] + npts, group[0]])
+            tris3.append([group[0], group[-1] + npts, group[0] + npts])
+
+        tris3 = np.array(tris3)
+        tris3[:, 1:] = np.flip(tris3[:, 1:], axis=1)
+
+        tris = np.vstack([tris1, tris2, tris3])
         cells = [('triangle', tris)]
-        meshio_mesh = meshio.Mesh(points * factor, cells)
+        points *= scale
+        meshio_mesh = meshio.Mesh(points, cells)
         meshio_mesh.write(filename + '.stl')
 
 

@@ -41,14 +41,14 @@ def reference_T3_2dof_stiffnes_matrix():
 def n_element_plane_isotropic_problem(n):
     Lx, Ly = n, n
     mesh_args = [n]*4
-    mesh = FEMOL.core.RectangleQuadMesh(*mesh_args)
-    problem = FEMOL.core.FEM_Problem('displacement', 'plane', mesh)
+    mesh = FEMOL.mesh.rectangle_Q4(*mesh_args)
+    problem = FEMOL.FEM_Problem('displacement', 'plane', mesh)
     problem.define_materials(FEMOL.materials.general_isotropic())
     problem.define_tensors(1)
-    force_domains = create_domain([Lx], [[0, Ly]])  # domain where the force is applied
+    force_domains = FEMOL.domains.inside_box([Lx], [[0, Ly]])  # domain where the force is applied
     forces = [2, 0]  # Force vector [Fx, Fy]
     problem.add_forces(forces, force_domains)  # Add the force on the domains to the problem
-    domain = create_domain([0], [[0, Ly]])  # create a domain object
+    domain = FEMOL.domains.inside_box([0], [[0, Ly]])  # create a domain object
     problem.add_fixed_domain(domain)  # Fix the boundary
     problem.assemble('K')
 
@@ -62,6 +62,15 @@ def reshape_Ke_into_plane_stress(Ke):
                    np.hstack([Ke[18:20, :2], Ke[18:20, 6:8], Ke[18:20, 12:14], Ke[18:20, 18:20]])])
 
     return K
+
+def reshape_Me_into_tensile(Ke):
+
+    M = np.vstack([np.hstack([Ke[:3, :3], Ke[:3, 6:9], Ke[:3, 12:15], Ke[:3, 18:21]]),
+                   np.hstack([Ke[6:9, :3], Ke[6:9, 6:9], Ke[6:9, 12:15], Ke[6:9, 18:21]]),
+                   np.hstack([Ke[12:15, :3], Ke[12:15, 6:9], Ke[12:15, 12:15], Ke[12:15, 18:21]]),
+                   np.hstack([Ke[18:21, :3], Ke[18:21, 6:9], Ke[18:21, 12:15], Ke[18:21, 18:21]])])
+
+    return M
 
 def reshape_Ke_into_bending(Ke):
     # reshape into the element stiffness in bending

@@ -202,8 +202,7 @@ class MyTestCase(unittest.TestCase):
         FEM_W = w[[0, 2, 3, 5, 6, 9]]
 
         # Test that the error is below 4%
-        self.assertTrue(((100 * np.abs(REF_W - FEM_W) / REF_W) < 4).all()
-                            )
+        self.assertTrue(((100 * np.abs(REF_W - FEM_W) / REF_W) < 4).all())
 
 if __name__ == '__main__':
     unittest.main()

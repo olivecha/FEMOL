@@ -1,7 +1,11 @@
 import FEMOL
 import numpy as np
 import pygmsh
+import gmsh
+import os
+import meshio
 import matplotlib.pyplot as plt
+from IPython.display import clear_output
 
 def reduce_mesh(mesh, tr):
     """
@@ -16,6 +20,7 @@ def reduce_mesh(mesh, tr):
         new_mesh.cell_data[key]['quad'] = mesh.cell_data[key]['quad'][X>tr]
     new_mesh.point_data = mesh.point_data
     return new_mesh
+
 
 def plot_L_outline1():
     """
@@ -34,6 +39,7 @@ def plot_L_outline1():
                        [0, 0]])
     for i in range(points.shape[0]-1):
         plt.plot([points[i][0], points[i+1][0]], [points[i][1], points[i+1][1]], color='k')
+
 
 def L_bracket_mesh1():
     """
@@ -66,6 +72,7 @@ def L_bracket_mesh1():
     # Transform into FEMOL mesh
     mesh = FEMOL.Mesh(mesh.points, mesh.cells_dict)
     return mesh
+
 
 def L_bracket_mesh2(lcar=0.05):
     """
@@ -126,6 +133,7 @@ def L_bracket_mesh2(lcar=0.05):
     mesh = FEMOL.Mesh(mesh.points, mesh.cells_dict)
     return mesh
 
+
 def plot_L_outline2():
     """
     Plot the outline of the round L bracket mesh
@@ -161,3 +169,54 @@ def plot_L_outline2():
     FEMOL.utils.plot_line([0.135 + R - Rc, 0.], [(0.012 + 0.022) / 2, 0.])
 
 
+def mixed_element_circle():
+    """
+    Returns a mixed triangle-quad circle mesh
+    :return:
+    """
+    # Create a circle of points
+    R = 1
+    C = (0, 0)
+    T = np.linspace(0, 2 * np.pi, 36)
+    points = np.array([C[0] + R * np.cos(T), C[1] + R * np.sin(T)]).T
+
+    # Initialize gmsh
+    gmsh.initialize()
+    gmsh.model.add("c11")
+
+    # Add the points keep the ids
+    p_is = []
+    for point in points:
+        i = gmsh.model.geo.addPoint(*point, 0)
+        p_is.append(i)
+
+    # add the lines keep the ids
+    l_is = []
+    for i in range(len(p_is) - 1):
+        l = gmsh.model.geo.addLine(p_is[i], p_is[i + 1])
+        l_is.append(l)
+    l = gmsh.model.geo.addLine(p_is[-1], p_is[0])
+    l_is.append(l)
+
+    # Curve loop from line ids
+    cl = gmsh.model.geo.addCurveLoop(l_is)
+    # Plane surface from curve loop
+    pl = gmsh.model.geo.addPlaneSurface([cl])
+    # Something
+    gmsh.model.geo.synchronize()
+
+    # To generate quadrangles instead of triangles, we can simply add
+    gmsh.model.mesh.setRecombine(2, pl)
+
+    gmsh.model.mesh.generate(2)
+    gmsh.option.setNumber("Mesh.RecombinationAlgorithm", 3)
+    gmsh.model.mesh.recombine()
+    gmsh.option.setNumber("Mesh.SubdivisionAlgorithm", 2)
+
+    gmsh.write("c11.vtk")
+    gmsh.finalize()
+    clear_output()
+    m = meshio.read('c11.vtk')
+    os.remove('c11.vtk')
+    m = FEMOL.Mesh(m.points, m.cells_dict)
+    return m

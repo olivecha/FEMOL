@@ -88,10 +88,52 @@ class MyTestCase(unittest.TestCase):
         self.assertTrue(np.allclose(layup1.A_mat, A_ref, 10e-3))
         self.assertTrue(np.allclose(layup2.A_mat, A_ref, 10e-3))
 
+    def test_laminate_z_coord(self):
+        """
+        Test the get_z_coord method for the Laminate class
+        """
+        mtr = FEMOL.materials.abaqus_benchmark()
+        mtr.hi = 1
+        # Odd plies no core
+        layup = FEMOL.laminate.Layup(material=mtr, plies=[0, 0, 0, 0, 0], symetric=False)
+        self.assertTrue(np.allclose(layup.z_values, [-2.5, -1.5, -0.5,  0.5,  1.5,  2.5]))
+        # Odd plies no core offset
+        layup = FEMOL.laminate.Layup(material=mtr, plies=[0, 0, 0, 0, 0], symetric=False, z_core=2.5)
+        self.assertTrue(np.allclose(layup.z_values,[0., 1., 2., 3., 4., 5.]))
+        # Odd plies with core
+        reached = False
+        try:
+            _ = FEMOL.laminate.Layup(material=mtr, plies=[0, 0, 0], symetric=False, h_core=1)
+        except ValueError:
+            reached = True
+        self.assertTrue(reached)
+        # Even plies no core
+        layup = FEMOL.laminate.Layup(material=mtr, plies=[0, 0, 0, 0, 0, 0], symetric=False)
+        self.assertTrue(np.allclose(layup.z_values, [-3., -2., -1.,  0.,  1.,  2.,  3.]))
+        # Even plies no core offset
+        layup = FEMOL.laminate.Layup(material=mtr, plies=[0, 0, 0, 0, 0, 0], symetric=False, z_core=3)
+        self.assertTrue(np.allclose(layup.z_values, [0., 1., 2., 3., 4., 5., 6.]))
+        # Even plies with core
+        layup = FEMOL.laminate.Layup(material=mtr, plies=[0, 0, 0, 0], symetric=False, h_core=2.5)
+        self.assertTrue(np.allclose(layup.z_values, [-3.25, -2.25, -1.25,  1.25,  2.25,  3.25]))
+        # Even plies with core offset
+        layup = FEMOL.laminate.Layup(material=mtr, plies=[0, 0], symetric=False, h_core=2, z_core=2)
+        self.assertTrue(np.allclose(layup.z_values, [0., 1., 3., 4.]))
+        # Symmetric no core
+        layup = FEMOL.laminate.Layup(material=mtr, plies=[0, 0, 0], symetric=True)
+        self.assertTrue(np.allclose(layup.z_values, [-3., -2., -1.,  0.,  1.,  2.,  3.]))
+        # symmetric with core
+        layup = FEMOL.laminate.Layup(material=mtr, plies=[0], symetric=True, h_core=5.)
+        self.assertTrue(np.allclose(layup.z_values, [-3.5, -2.5,  2.5,  3.5]))
+        # symmetric with core offset
+        layup = FEMOL.laminate.Layup(material=mtr, plies=[0, 0], symetric=True, h_core=2, z_core=3)
+        self.assertTrue(np.allclose(layup.z_values, [0, 1, 2, 4, 5, 6]))
+
     def test_D_tensor_summation(self):
         """
         Testing of D1 + D2 = D3 if plies1 + plies2 = plies3
         for D1 and D2 the tensors of two symmetric laminates
+        St : [45, -45, core, -45, 45] + [0, 90, -45, 45, 45, -45, 90, 0] = [45, -45, 0, 90, -45, 45]s
         """
         material = FEMOL.materials.general_carbon()
         plies1 = [0, 90, -45, 45]  # s
@@ -145,9 +187,34 @@ class MyTestCase(unittest.TestCase):
         problem2.define_materials(material2)
         problem2.define_tensors(layup)
 
-        self.assertTrue(np.allclose(problem1.C_A, problem2.C_A))
-        self.assertTrue(np.allclose(problem1.C_D, problem2.C_D))
-        self.assertTrue(np.allclose(problem1.C_G, problem2.C_G))
+        self.assertTrue(np.allclose(problem1.tensors[0], problem2.tensors[0]))
+        self.assertTrue(np.allclose(problem1.tensors[1], problem2.tensors[1]))
+        self.assertTrue(np.allclose(problem1.tensors[2], problem2.tensors[2]))
+        self.assertTrue(np.allclose(problem1.tensors[3], problem2.tensors[3]))
+
+    def test_B_tensor_cross_ply(self):
+        """
+        Test for the get_B() Laminate class method
+        Example of a cross ply laminate from (Lessard, 2020)
+        """
+        material = FEMOL.materials.T300_N5208()
+        plies = 8*[0] + 8*[90]
+        layup = FEMOL.laminate.Layup(material=material, plies=plies, symetric=False)
+        self.assertTrue(np.isclose(layup.B_mat[0, 0], -85732.49005729874))
+        self.assertTrue(np.isclose(layup.B_mat[1, 1], 85732.49005729874))
+
+    def test_B_tensor_antisym(self):
+        """
+        Test for the get_B() Laminate class method
+        Example of a anti symmetric laminate from (Lessard, 2020)
+        """
+        material = FEMOL.materials.T300_N5208()
+        plies = 8*[-45] + 8*[45]
+        layup = FEMOL.laminate.Layup(material=material, plies=plies, symetric=False)
+        self.assertTrue(np.isclose(layup.B_mat[0, 2], 42866.24503))
+        self.assertTrue(np.isclose(layup.B_mat[1, 2], 42866.24503))
+        self.assertTrue(np.isclose(layup.B_mat[2, 0], 42866.24503))
+        self.assertTrue(np.isclose(layup.B_mat[2, 1], 42866.24503))
 
 
 if __name__ == '__main__':

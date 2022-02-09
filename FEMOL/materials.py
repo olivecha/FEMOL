@@ -7,6 +7,7 @@ class OrthotropicMaterial(object):
     OrthotropicMaterial(name=None, Ex=None, Ey=None, Es=None, vx=None, Xt=None, Xc=None, Yt=None, Yc=None,
                  Sc=None, ho=None, rho=None)
     """
+
     def __init__(self, name=None, Ex=None, Ey=None, Es=None, vx=None, Xt=None, Xc=None, Yt=None, Yc=None,
                  Sc=None, ho=None, rho=None, Gyz=None, Gxz=None, ):
         self.name = name
@@ -25,12 +26,16 @@ class OrthotropicMaterial(object):
 
         # Estimated with Ey
         else:
-            self.Gyz, self.Gxz = 2*[min(self.Ey, self.Es)]
-            self.out_of_plane_shear = False
+            if (self.Ey / self.Es > 1e-2) & (self.Ey / self.Es < 100):
+                self.Gyz, self.Gxz = 2*[min(self.Ey, self.Es)]
+                self.out_of_plane_shear = False
+            else:
+                self.Gyz, self.Gxz = 2 * [max(self.Ey, self.Es)]
 
         # Poisson ratios
         self.vx = vx  # []
         self.vy = vx * (Ey / Ex)  # []
+        self.vy = np.min([1, self.vy])
 
         # Thickness in m
         self.hi = ho  # [m]
@@ -108,12 +113,12 @@ class OrthotropicMaterial(object):
 
         # Convert angle to radians
         theta = np.radians(angle)
-        U_mat = np.array([[U_1,  np.cos(2*theta),  np.cos(4*theta)],
-                          [U_1, -np.cos(2*theta),  np.cos(4*theta)],
-                          [U_4,  0,               -np.cos(4*theta)],
-                          [U_5,  0,               -4*np.cos(4*theta)],
-                          [0,    np.sin(2*theta),  2*np.sin(4*theta)],
-                          [0,    np.sin(2*theta), -2*np.sin(4*theta)],])
+        U_mat = np.array([[U_1, np.cos(2 * theta), np.cos(4 * theta)],
+                          [U_1, -np.cos(2 * theta), np.cos(4 * theta)],
+                          [U_4, 0, -np.cos(4 * theta)],
+                          [U_5, 0, -4 * np.cos(4 * theta)],
+                          [0, np.sin(2 * theta), 2 * np.sin(4 * theta)],
+                          [0, np.sin(2 * theta), -2 * np.sin(4 * theta)], ])
 
         S = U_mat @ U_vector
 
@@ -155,6 +160,14 @@ class IsotropicMaterial(object):
 
         return D
 
+    @staticmethod
+    def coupled_tensor():
+        """
+        Coupled tensor for isotropic material
+        (always zero)
+        """
+        return np.zeros((3, 3))
+
     def shear_tensor(self, t):
         """
         Out of plane shear tensor for an isotropic material
@@ -166,9 +179,11 @@ class IsotropicMaterial(object):
                       [0, G]])
         return C
 
+
 """
 Orthotropic laminate materials
 """
+
 
 def general_carbon():
     """
@@ -177,13 +192,14 @@ def general_carbon():
     """
     # Carbon material proprieties
     name = 'general_carbon'
-    Ex = 200e9
-    Ey = 10e9
-    Es = 3.5e9
+    Ex = 130e9
+    Ey = 3e9
+    Es = 5e9
     vx = 0.28
     ho = 0.00015
-    rho = 1600
+    rho = 1550
     return OrthotropicMaterial(name=name, Ex=Ex, Ey=Ey, Es=Es, vx=vx, ho=ho, rho=rho)
+
 
 def general_flax():
     """
@@ -196,9 +212,12 @@ def general_flax():
     Ey = 3e9
     Es = 5e9
     vx = 0.28
-    ho = 0.0003
-    rho = 1200
-    return OrthotropicMaterial(name=name, Ex=Ex, Ey=Ey, Es=Es, vx=vx, ho=ho, rho=rho)
+    ho = 0.00033
+    rho = 1150
+    Gyz = 2e9
+    Gxz = 5e9
+    return OrthotropicMaterial(name=name, Ex=Ex, Ey=Ey, Es=Es, vx=vx, ho=ho, rho=rho, Gyz=Gyz, Gxz=Gxz)
+
 
 def T300_N5208():
     """
@@ -221,6 +240,7 @@ def T300_N5208():
     return OrthotropicMaterial(name=name, Ex=Ex, Ey=Ey, Es=Es, vx=vx, Xt=Xt, Xc=Xc,
                                Yt=Yt, Yc=Yc, Sc=Sc, ho=ho, rho=rho)
 
+
 def Eglass_epoxy():
     """
     Function returning a OrthotropicMaterial class instance for the Eglass epoxy material
@@ -241,6 +261,7 @@ def Eglass_epoxy():
 
     return OrthotropicMaterial(name=name, Ex=Ex, Ey=Ey, Es=Es, vx=vx, Xt=Xt, Xc=Xc,
                                Yt=Yt, Yc=Yc, Sc=Sc, ho=ho, rho=rho)
+
 
 def Kev49_epoxy():
     """
@@ -263,6 +284,7 @@ def Kev49_epoxy():
     return OrthotropicMaterial(name=name, Ex=Ex, Ey=Ey, Es=Es, vx=vx, Xt=Xt, Xc=Xc,
                                Yt=Yt, Yc=Yc, Sc=Sc, ho=ho, rho=rho)
 
+
 def AS_H3501():
     """
     Function returning a OrthotropicMaterial class instance for the AS H3501 material
@@ -283,6 +305,7 @@ def AS_H3501():
 
     return OrthotropicMaterial(name=name, Ex=Ex, Ey=Ey, Es=Es, vx=vx, Xt=Xt, Xc=Xc,
                                Yt=Yt, Yc=Yc, Sc=Sc, ho=ho, rho=rho)
+
 
 def flax_epoxy():
     """
@@ -305,6 +328,7 @@ def flax_epoxy():
     return OrthotropicMaterial(name=name, Ex=Ex, Ey=Ey, Es=Es, vx=vx, Xt=Xt, Xc=Xc,
                                Yt=Yt, Yc=Yc, Sc=Sc, ho=ho, rho=rho)
 
+
 def AS4_PEEK():
     """
     Function returning a OrthotropicMaterial class instance for the AS4 PEEK material
@@ -325,6 +349,7 @@ def AS4_PEEK():
 
     return OrthotropicMaterial(name, Ex, Ey, Es, vx, Xt, Xc,
                                Yt, Yc, Sc, ho, rho)
+
 
 def abaqus_benchmark():
     """
@@ -350,6 +375,7 @@ def abaqus_benchmark():
 
     return OrthotropicMaterial(name, Ex, Ey, Gxy, vxy, ho=ho, rho=rho, Gxz=Gxz, Gyz=Gyz)
 
+
 def isotropic_laminate():
     """
     Isotropic Laminate material to test the stiffness tensor formulations
@@ -362,8 +388,8 @@ def isotropic_laminate():
     vxz = 0.3
 
     kappa = 5 / 6  # Shear ratio constant
-    Gxz = kappa * 0.5 * Ex / (1 + vxz)  # shear modulus
-    Gyz = kappa * 0.5 * Ey / (1 + vyz)  # shear modulus
+    Gxz = 0.5 * Ex / (1 + vxz)  # shear modulus
+    Gyz = 0.5 * Ey / (1 + vyz)  # shear modulus
 
     Es = Ex * (1 - vxy) / 2 / (1 - vxy ** 2)  # Pa
 
@@ -372,6 +398,7 @@ def isotropic_laminate():
     rho = 1000
 
     return OrthotropicMaterial(name, Ex, Ey, Es, vxy, ho=ho, rho=rho, Gxz=Gxz, Gyz=Gyz)
+
 
 ALL_LAMINATE_MTR = [general_carbon(),
                     general_flax(),
@@ -383,13 +410,16 @@ ALL_LAMINATE_MTR = [general_carbon(),
                     AS4_PEEK(),
                     abaqus_benchmark(), ]
 
+
 def random_laminate_material():
     i = np.random.randint(len(ALL_LAMINATE_MTR))
     return ALL_LAMINATE_MTR[i]
 
+
 """
 Isotropic materials
 """
+
 
 def general_isotropic():
     """
@@ -401,8 +431,24 @@ def general_isotropic():
     rho = 1  # kg/m3
     return IsotropicMaterial(E, mu, rho)
 
+
 def isotropic_bending_benchmark():
     E = 10920  # Pa
     mu = 0.3
     rho = 1  # kg/m3
+    return IsotropicMaterial(E, mu, rho)
+
+
+def solid_PLA():
+    E = 3500
+    mu = 0.36
+    rho = 1.252
+    return IsotropicMaterial(E, mu, rho)
+
+
+def printed_PLA(infill=1):
+    PLA = solid_PLA()
+    E = infill*PLA.E
+    mu = infill*PLA.mu
+    rho = infill*PLA.rho
     return IsotropicMaterial(E, mu, rho)

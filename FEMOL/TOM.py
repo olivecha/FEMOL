@@ -78,8 +78,10 @@ class SIMP_COMP(object):
             if plot:
                 self._plot_iteration()
             else:
-                clear_output(wait=True)
-                info = "Iteration : " + str(self.loop) + ', variation : ' + str(np.around(self.change * 100, 1))
+                info = "Iteration : {loop}, variation " \
+                       ": {var}, objective : {obj}".format(loop=self.loop,
+                                                           var=np.around(self.change * 100, 1),
+                                                           obj=np.abs(np.around(self.c, 3)))
                 print(info)
 
         if save:
@@ -137,7 +139,7 @@ class SIMP_COMP(object):
         if self.mesh.structured:
             c = 0
             dc = np.array([])
-            Ke = self.mesh.element.Ke(self.FEM.C_A, self.FEM.C_D, self.FEM.C_G)
+            Ke = self.mesh.element.Ke(*self.FEM.tensors)
 
             # Loop over every element
             for ele, xe in zip(self.mesh.cells[self.mesh.contains[0]], X[self.mesh.contains[0]]):
@@ -188,8 +190,8 @@ class SIMP_COMP(object):
         if self.mesh.structured:
             c = 0
             dc = np.array([])
-            Ke_base = self.mesh.element.Ke(self.FEM.C_A, self.FEM.C_D, self.FEM.C_G)
-            Ke_coat = self.mesh.element.Ke(self.FEM.coat_C_A, self.FEM.coat_C_D, self.FEM.coat_C_G)
+            Ke_base = self.mesh.element.Ke(*self.FEM.tensors)
+            Ke_coat = self.mesh.element.Ke(*self.FEM.coat_tensors)
 
             # Loop over every element
             for ele, xe in zip(self.mesh.cells[self.mesh.contains[0]], X[self.mesh.contains[0]]):
@@ -292,10 +294,11 @@ class SIMP_COMP(object):
 
         while (l2 - l1) > 1e-4:
             lmid = 0.5 * (l1 + l2)
-
             X1 = X + move
-            X2 = X * (-self.dc / lmid) ** 0.3
-
+            if np.any(self.dc > 0):
+                X2 = X * (self.dc / lmid) ** 0.3
+            else:
+                X2 = X * (-self.dc / lmid) ** 0.3
             X_new = np.min([X1, X2], axis=0)
             X_new = np.min([np.ones(self.mesh.N_ele), X_new], axis=0)
             X_new = np.max([X - move, X_new], axis=0)

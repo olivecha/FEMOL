@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
+
 class Element(object):
     """
     Genereal FEMOL element class
@@ -37,8 +38,6 @@ class Element(object):
         self.x, self.y = points.transpose()[:2]  # 2D only
         self.N_dof = Ndof
         self.size = self.N_nodes * self.N_dof
-
-
 
 
 class T3(object):
@@ -701,6 +700,17 @@ class Q4(object):
     integration_points_2 = [(-val, -val), (val, -val), (val, val), (-val, val)]
     integration_weights_2 = [1, 1, 1, 1]
 
+    # 3rd order gauss integration points
+    val = np.sqrt(0.6)
+    integration_points_3 = [(-val, -val), (-val, 0), (-val, val),
+                            (0, -val), (0, 0), (0, val),
+                            (val, -val), (val, 0), (val, val)]
+    wt_1 = 5/9
+    wt_2 = 8/9
+    integration_weights_3 = [wt_1**2, wt_1*wt_2, wt_1**2,
+                             wt_1*wt_2, wt_2**2, wt_1*wt_2,
+                             wt_1**2, wt_1*wt_2, wt_1**2, ]
+
     @staticmethod
     def shape(xi, eta):
         """
@@ -904,6 +914,9 @@ class Q4(object):
             b_i = 3
         elif self.N_dof == 6:
             b_i = 8
+        else:
+            print('Invalid N_dof')
+            raise ValueError
 
         b_j = self.size
 
@@ -992,27 +1005,15 @@ class Q4(object):
             # Create 8x8 tensors
             T = np.zeros((8, 8))
             T[:3, :3] = tensors[0]
-            C = T
+            A = T.copy()
             T = np.zeros((8, 8))
             T[3:6, 3:6] = tensors[1]
-            D = T
+            D = T.copy()
             T = np.zeros((8, 8))
             T[6:, 6:] = tensors[2]
-            G = T
-            Kp, Kb, Ks = 0, 0, 0
+            G = T.copy()
 
-            # 2nd order gauss integration for the plane and bending terms
-            for pt, w in zip(self.integration_points_2, self.integration_weights_2):
-                # Plane stress strain matrix
-                Bp = self.plane_B_matrix(*pt)
-                # Plate bending strain matrix
-                Bb = self.bending_B_matrix(*pt)
-                # Jacobian determinant
-                det_J = self.det_J(*pt)
-                # Stiffness matrix summation
-                Kp += w * (Bp.T @ C @ Bp * det_J)
-                Kb += w * (Bb.T @ D @ Bb * det_J)
-
+            Ks = 0
             # 1st order gauss integration for the shear term
             for pt, w in zip(self.integration_points_1, self.integration_weights_1):
                 # Shear strain matrix
@@ -1020,9 +1021,44 @@ class Q4(object):
                 # Element stiffness summation
                 Ks += w * (Bs.T @ G @ Bs * self.det_J(*pt))
 
-            Ke = Kp + Kb + Ks
-            Ke[np.arange(5, 24, 6), np.arange(5, 24, 6)] = 1
-            return Ke
+            # If there is a coupled bending tensor
+            if len(tensors) > 3:
+                T = np.zeros((8, 8))
+                T[:3, 3:6] = tensors[3]
+                T[3:6, :3] = tensors[3]
+                B = T.copy()
+                C = A + B + D
+                K_coupled = 0
+                # 2nd order gauss integration for the in-plane and bending
+                for pt, w in zip(self.integration_points_2, self.integration_weights_2):
+                    # Plane stress strain matrix
+                    Bp = self.plane_B_matrix(*pt)
+                    # Plate bending strain matrix
+                    Bb = self.bending_B_matrix(*pt)
+                    B = Bp + Bb
+                    # Jacobian determinant
+                    det_J = self.det_J(*pt)
+                    # Stiffness matrix summation
+                    K_coupled += w * (B.T @ C @ B * det_J)
+                K_element = K_coupled + Ks
+
+            else:
+                Kp, Kb = 0, 0
+                # 2nd order gauss integration for the plane and bending terms
+                for pt, w in zip(self.integration_points_2, self.integration_weights_2):
+                    # Plane stress strain matrix
+                    Bp = self.plane_B_matrix(*pt)
+                    # Plate bending strain matrix
+                    Bb = self.bending_B_matrix(*pt)
+                    # Jacobian determinant
+                    det_J = self.det_J(*pt)
+                    # Stiffness matrix summation
+                    Kp += w * (Bp.T @ A @ Bp * det_J)
+                    Kb += w * (Bb.T @ D @ Bb * det_J)
+                K_element = Kp + Kb + Ks
+
+            K_element[np.arange(5, 24, 6), np.arange(5, 24, 6)] = 1
+            return K_element
 
     def Me(self, material, thickness):
         """
@@ -1098,7 +1134,7 @@ class Q4(object):
         :param T: Stiffness tensor
         :return: S, the stress components [Sx, Sy, Sxy]
         """
-        S = T @ self.plane_B_matrix(0,0) @ u
+        S = T @ self.plane_B_matrix(0, 0) @ u
         return S
 
 

@@ -63,7 +63,7 @@ class MyTestCase(unittest.TestCase):
         problem.add_forces([F / (30 - 1), 0], force_domain_2)
         mesh = problem.solve(verbose=False)
         # compute problem strain and stress
-        mesh.stress_from_displacement(problem.C_A)
+        mesh.stress_from_displacement(problem.tensors[0])
         # True value for stress
         A = thickness * Ly
         Sx = np.sum(problem.F) / A

@@ -1,4 +1,5 @@
 # FEMOL Imports
+import FEMOL.materials
 from FEMOL.mesh import Mesh
 from FEMOL.laminate import Layup
 # Numpy import
@@ -118,7 +119,7 @@ class FEM_Problem(object):
         define_tensor(base thickness or base layup, coating thickness or coating layup)
         """
         # Empty tensor list
-        C_A, C_D, C_G, ho = [], [], [], []
+        C_A, C_B, C_D, C_G, ho = [], [], [], [], []
 
         # Loop over the user defined tensors
         for tensor, material in zip(tensors, self.materials):
@@ -127,6 +128,7 @@ class FEM_Problem(object):
                 layup = tensor
                 ho.append(layup.hA)
                 C_A.append(layup.get_A_FEM())
+                C_B.append(layup.B_mat)
                 C_D.append(layup.D_mat)
                 C_G.append(layup.G_mat)
                 self.layups.append(layup)
@@ -135,14 +137,17 @@ class FEM_Problem(object):
                 thickness = tensor
                 ho.append(thickness)
                 C_A.append(material.plane_tensor(thickness))
+                C_B.append(material.coupled_tensor())
                 C_D.append(material.bending_tensor(thickness))
                 C_G.append(material.shear_tensor(thickness))
 
         # Define attributes according to kind
-        self.C_A, self.C_D, self.C_G, self.ho = C_A[0], C_D[0], C_G[0], ho[0]
+        self.tensors = [C_A[0],  C_D[0], C_G[0], C_B[0]]
+        self.ho = ho[0]
 
         if len(C_A) == 2:
-            self.coat_C_A, self.coat_C_D, self.coat_C_G, self.coat_ho = C_A[1], C_D[1], C_G[1], ho[1]
+            self.coat_tensors = [C_A[1], C_D[1], C_G[1],  C_B[1]]
+            self.coat_ho = ho[1]
             self.coating = True
 
     """
@@ -381,7 +386,6 @@ class FEM_Problem(object):
 
         if len(force_nodes) > 0:
             force = np.array(force) / len(force_nodes)  # Distribute the force components over the domain nodes
-            #self.fr.append(force)
             for node in force_nodes:
                 for ddl in np.arange(0, N_ddls):
                     F[N_ddls * node + ddl] = force[ddl]
@@ -402,6 +406,7 @@ class FEM_Problem(object):
         X Density values for the elements
         p penalty factor
         """
+        data = 0
         # Compute the data vector of the sparse matrix
         if self.mesh.structured:
             if self.coating:
@@ -431,7 +436,7 @@ class FEM_Problem(object):
         X Density values for the elements
         p penalty factor
         """
-
+        data = 0
         # Compute the data vector of the sparse matrix
         if self.mesh.structured:
             if self.coating:
@@ -488,7 +493,7 @@ class FEM_Problem(object):
             X = np.repeat(X, element.size ** 2) ** p
 
         # Element stiffness matrix data
-        Ke = element.Ke(self.C_A, self.C_D, self.C_G)
+        Ke = element.Ke(*self.tensors)
         data = np.tile(Ke.reshape(-1), self.mesh.N_ele) * X
 
         return data
@@ -517,9 +522,9 @@ class FEM_Problem(object):
             X = np.repeat(X, element.size ** 2) ** p
 
         # Element stiffness matrix
-        Ke_base = element.Ke(self.C_A, self.C_D, self.C_G)
+        Ke_base = element.Ke(*self.tensors)
         data_base = np.tile(Ke_base.reshape(-1), self.mesh.N_ele)
-        Ke_coat = element.Ke(self.coat_C_A, self.coat_C_D, self.coat_C_G)
+        Ke_coat = element.Ke(*self.coat_tensors)
         data_coat = np.tile(Ke_coat.reshape(-1), self.mesh.N_ele)
         data = data_base + data_coat * X
 
@@ -547,7 +552,7 @@ class FEM_Problem(object):
                     # Create the element
                     element = self.mesh.ElementClasses[cell_type](self.mesh.points[cell], self.N_dof)
                     # Compute the element stiffness matrix
-                    Ke = element.Ke(self.C_A, self.C_D, self.C_G) * (Xe ** p)
+                    Ke = element.Ke(*self.tensors) * (Xe ** p)
                     self.element_Ke[cell_type].append(Ke)
                     data = np.append(data, Ke.reshape(-1))
 
@@ -560,11 +565,10 @@ class FEM_Problem(object):
                     # Create the element
                     element = self.mesh.ElementClasses[cell_type](self.mesh.points[cell], self.N_dof)
                     # Compute the element stiffness matrix
-                    Ke = element.Ke(self.C_A, self.C_D, self.C_G)
+                    Ke = element.Ke(*self.tensors)
                     self.element_Ke[cell_type].append(Ke)
                     data = np.append(data, Ke.reshape(-1))
 
-        #data = np.append(data, np.ones(self.mesh.empty_nodes.shape[0] * self.N_dof))
         return data
 
     def _K_unstructured_mesh_data_coating(self, X=None, p=None):
@@ -590,8 +594,8 @@ class FEM_Problem(object):
                     # Create the element
                     element = self.mesh.ElementClasses[cell_type](self.mesh.points[cell], self.N_dof)
                     # Compute the element stiffness matrix
-                    Ke_base = element.Ke(self.C_A, self.C_D, self.C_G)
-                    Ke_coat = element.Ke(self.coat_C_A, self.coat_C_D, self.coat_C_G) * (Xe ** p)
+                    Ke_base = element.Ke(*self.tensors)
+                    Ke_coat = element.Ke(*self.coat_tensors) * (Xe ** p)
                     self.element_Ke_base[cell_type].append(Ke_base)
                     self.element_Ke_coat[cell_type].append(Ke_coat)
                     Ke = Ke_base.reshape(-1) + Ke_coat.reshape(-1)
@@ -606,8 +610,8 @@ class FEM_Problem(object):
                     # Create the element
                     element = self.mesh.ElementClasses[cell_type](self.mesh.points[cell], self.N_dof)
                     # Compute the element stiffness matrix
-                    Ke_base = element.Ke(self.C_A, self.C_D, self.C_G)
-                    Ke_coat = element.Ke(self.coat_C_A, self.coat_C_D, self.coat_C_G)
+                    Ke_base = element.Ke(*self.tensors)
+                    Ke_coat = element.Ke(*self.coat_tensors)
                     self.element_Ke_base[cell_type].append(Ke_base)
                     self.element_Ke_coat[cell_type].append(Ke_coat)
                     Ke = Ke_base.flatten() + Ke_coat.flatten()
@@ -674,7 +678,6 @@ class FEM_Problem(object):
                     self.element_Me[cell_type].append(Me)
                     data = np.append(data, Me.reshape(-1))
 
-        #data = np.append(data, np.ones(self.mesh.empty_nodes.shape[0] * self.N_dof))
         return data
 
     def _M_structured_mesh_data_coat(self, X=None, q=None):
