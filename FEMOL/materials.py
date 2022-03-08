@@ -26,11 +26,7 @@ class OrthotropicMaterial(object):
 
         # Estimated with Ey
         else:
-            if (self.Ey / self.Es > 1e-2) & (self.Ey / self.Es < 100):
-                self.Gyz, self.Gxz = 2*[min(self.Ey, self.Es)]
-                self.out_of_plane_shear = False
-            else:
-                self.Gyz, self.Gxz = 2 * [max(self.Ey, self.Es)]
+            self.Gyz, self.Gxz = self.Ey, self.Es
 
         # Poisson ratios
         self.vx = vx  # []
@@ -126,6 +122,20 @@ class OrthotropicMaterial(object):
                          [S[2], S[1], S[5]],
                          [S[4], S[5], S[3]]])
 
+    def G_mat(self, angle):
+        """
+        Projection of the out of plane shear onto the laminate ply angle
+        """
+        theta = np.radians(angle)
+        Gxz = self.Gxz * np.cos(theta) + self.Gyz * np.sin(theta)
+        Gyz = self.Gyz * np.cos(theta) + self.Gxz * np.sin(theta)
+
+        return np.array([[Gxz, 0],
+                         [0, Gyz]])
+
+
+
+
 
 class IsotropicMaterial(object):
 
@@ -193,7 +203,7 @@ def general_carbon():
     # Carbon material proprieties
     name = 'general_carbon'
     Ex = 130e9
-    Ey = 3e9
+    Ey = 3.5e9
     Es = 5e9
     vx = 0.28
     ho = 0.00015
@@ -208,15 +218,56 @@ def general_flax():
     """
     # Flax material proprieties
     name = 'general_flax'
-    Ex = 20e9
-    Ey = 3e9
-    Es = 5e9
+    Ex = 19e9
+    Ey = 2.9e9
+    Es = 2.5e9
     vx = 0.28
     ho = 0.00033
-    rho = 1150
-    Gyz = 2e9
-    Gxz = 5e9
+    rho = 1100
+    Gyz = Ey
+    Gxz = Es
     return OrthotropicMaterial(name=name, Ex=Ex, Ey=Ey, Es=Es, vx=vx, ho=ho, rho=rho, Gyz=Gyz, Gxz=Gxz)
+
+
+def laminate_resin():
+    """
+    Orthotropic material instance for the resin used in laminates
+    """
+    name = "laminate resin"
+    Ex = 2.9e9  # Pa
+    Ey = 2.9e9  # Pa
+    vxy = 0.3
+    vyz = 0.3
+    vxz = 0.3
+    Gxz = 0.5 * Ex / (1 + vxz)  # shear modulus
+    Gyz = 0.5 * Ey / (1 + vyz)  # shear modulus
+
+    Es = Ex * (1 - vxy) / 2 / (1 - vxy ** 2)  # Pa
+    ho = 0.01  # m
+    rho = 1100
+
+    return OrthotropicMaterial(name, Ex, Ey, Es, vxy, ho=ho, rho=rho, Gxz=Gxz, Gyz=Gyz)
+
+
+def laminate_core(infill_density=1):
+    """
+    Orthotropic material instance for the core material used in laminates
+    Represented as PLA with an infill density value
+    """
+    name = "laminate core"
+    Ex = infill_density*4.8e9  # Pa
+    Ey = infill_density*4.8e9  # Pa
+    vxy = 0.3
+    vyz = 0.3
+    vxz = 0.3
+    Gxz = 0.5 * Ex / (1 + vxz)  # shear modulus
+    Gyz = 0.5 * Ey / (1 + vyz)  # shear modulus
+
+    Es = Ex * (1 - vxy) / 2 / (1 - vxy ** 2)  # Pa
+    ho = 0.01  # m
+    rho = 1240
+
+    return OrthotropicMaterial(name, Ex, Ey, Es, vxy, ho=ho, rho=rho, Gxz=Gxz, Gyz=Gyz)
 
 
 def T300_N5208():
@@ -396,6 +447,31 @@ def isotropic_laminate():
     ho = 0.01  # m
 
     rho = 1000
+
+    return OrthotropicMaterial(name, Ex, Ey, Es, vxy, ho=ho, rho=rho, Gxz=Gxz, Gyz=Gyz)
+
+
+def orthotropic_steel():
+    """
+    Return an orthotropic material class instances with steel properties
+    """
+    name = "orthotropic steel"
+    E = 190e9
+    rho = 7840
+    mu = 0.28
+    Ex = E  # Pa
+    Ey = E  # Pa
+    vxy = mu
+    vyz = mu
+    vxz = mu
+
+    kappa = 5 / 6  # Shear ratio constant
+    Gxz = 0.5 * Ex / (1 + vxz)  # shear modulus
+    Gyz = 0.5 * Ey / (1 + vyz)  # shear modulus
+
+    Es = Ex * (1 - vxy) / 2 / (1 - vxy ** 2)  # Pa
+
+    ho = 0.001  # m
 
     return OrthotropicMaterial(name, Ex, Ey, Es, vxy, ho=ho, rho=rho, Gxz=Gxz, Gyz=Gyz)
 

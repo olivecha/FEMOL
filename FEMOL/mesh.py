@@ -508,10 +508,12 @@ class Mesh(object):
         # Use the nearest value when linear is Nan
         data = data_linear
         data[np.isnan(data)] = data_nearest[np.isnan(data)]
+        if not (values < 0).any():
+            data[data < 0] = values.min()
         # Add to the mesh point data
         self.point_data[which] = data
 
-    def point_data_to_STL(self, filename, which, hb=1, hc=0, symmetric=False, scale=1):
+    def point_data_to_STL(self, filename, which, hb=1, hc=0, symmetric=False, scale=1, flip=False):
         """ Creates a 3D STL mesh where the z coordinate is the point data"""
         # Get two copies of the mesh nodes points
         points1 = self.points.copy()
@@ -554,12 +556,16 @@ class Mesh(object):
         # Get all the mesh cells converted to triangles
         tris1 = self.plot.all_tris.copy()
         tris2 = self.plot.all_tris.copy()
+        # add the size to points index so they refer to new points
+        tris2 += self.points.shape[0]
 
         # Flip the triangles underneath
-        tris1[:, 1:] = np.flip(tris2[:, 1:], axis=1)
-
-        # Add to the point indexes so they refer to new points
-        tris2 += self.points.shape[0]
+        if flip:
+            # flip the main triangles
+            tris2[:, 1:] = np.flip(tris2[:, 1:], axis=1)
+        else:
+            # flip the triangles underneath
+            tris1[:, 1:] = np.flip(tris1[:, 1:], axis=1)
 
         # Fill the boundaries with triangles
         npts = self.points.shape[0]
@@ -687,6 +693,16 @@ class MeshPlot(object):
         self.mesh.unwrap()
         self.mesh.wrap(name, factor)
         self._empty_wrapped_2D()
+
+    def mode(self, v, wrapped=False, N_dof=6):
+        """
+        Plots the eigenmode corresponding to vector v
+        :param v: eigenvector
+        :param wrapped: wrap the x-y coordinates of the mesh
+        :return: None
+        """
+        self.mesh.add_mode('mode_plot', v, N_dof)
+        self.point_data('mode_plot_Uz', wrapped=wrapped)
 
     def mode_Z(self, name):
         self.point_data(name + '_' + 'Uz', wrapped=False)

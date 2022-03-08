@@ -316,8 +316,8 @@ class SIMP_COMP(object):
             else:
                 l2 = lmid
 
-            X_new = np.split(X_new, [self.mesh.cells[self.mesh.contains[0]].shape[0]])
-            X_new = {key: Xi for (key, Xi) in zip(self.mesh.contains, X_new)}
+        X_new = np.split(X_new, [self.mesh.cells[self.mesh.contains[0]].shape[0]])
+        X_new = {key: Xi for (key, Xi) in zip(self.mesh.contains, X_new)}
 
         return X_new
 
@@ -483,30 +483,30 @@ class SIMP_VIBE(object):
 
     # Find the lagrange multiplier
         while (l2 - l1) > 1e-4:
-        # Bijection algorithm
+            # Bijection algorithm
             lmid = 0.5 * (l1 + l2)
-        # Move by an increment
+            # Move by an increment
             X1 = X + move
-        # remove negative values
+            # remove negative values
             self.dlmbd[self.dlmbd < 0] = 0
-        # Multiply by the sensibility
+            # Multiply by the sensibility
             X2 = X * (self.dlmbd / lmid) ** 0.3
-        # Take the min between move and sensibilities
+            # Take the min between move and sensibilities
             X_new = np.min([X1, X2], axis=0)
-        # Remove value higher than one
+            # Remove value higher than one
             X_new = np.min([np.ones(self.mesh.N_ele), X_new], axis=0)
-        # Do a negative move
+            # Do a negative move
             X_new = np.max([X - move, X_new], axis=0)
             # Remove the values lower than the threshold
             X_new = np.max([0.001 * np.ones(self.mesh.N_ele), X_new], axis=0)
 
-        # Add matter where the domain is constrained to be solid
+            # Add matter where the domain is constrained to be solid
             if hasattr(self, 'solid_domain'):
                 X_new = self._apply_solid_domain(self.solid_domain, X_new)
-        # Remove matter where the domain is constrained to be void
+            # Remove matter where the domain is constrained to be void
             if hasattr(self, 'void_domain'):
                 X_new = self._apply_void_domain(self.void_domain, X_new)
-        # Do the bijection
+            # Do the bijection
             if (np.sum(X_new) - self.f * self.mesh.N_ele) > 0:
                 l1 = lmid
             else:
@@ -607,7 +607,7 @@ class SIMP_VIBE(object):
         if self.mesh.structured:
             dlmbd = []
             # Constant element matrices
-            Ke = self.mesh.element.Ke(self.FEM.C_A, self.FEM.C_D, self.FEM.C_G)
+            Ke = self.mesh.element.Ke(*self.FEM.tensors)
             Me = self.mesh.element.Me(self.FEM.materials[0], self.FEM.ho)
 
             # Loop over every element
@@ -652,7 +652,7 @@ class SIMP_VIBE(object):
         if self.mesh.structured:
             dlmbd = []
             # Constant element matrices
-            Kc = self.mesh.element.Ke(self.FEM.coat_C_A, self.FEM.coat_C_D, self.FEM.coat_C_G)
+            Kc = self.mesh.element.Ke(*self.FEM.coat_tensors)
             Mc = self.mesh.element.Me(self.FEM.materials[1], self.FEM.coat_ho)
 
             # Loop over every element
@@ -723,28 +723,43 @@ class SIMP_VIBE(object):
     def density_to_core_height(self):
         """Export the density values results to core height values"""
 
-        # Create the height/stiffness vectors
-        layup = self.FEM.layups[1]
-        zmin = layup.hA / 2
-        zmax = layup.zc - layup.hA / 2
-        zcoords = np.linspace(zmin, zmax)
-        D_list = []
-        plies = layup.plies
-        for z in zcoords:
-            layup_t = FEMOL.Layup(plies=plies, material=layup.mtr, symetric=False, h_core=0, z_core=z)
-            D_list.append(layup_t.D_mat[0, 0])
+        # Get the laminates from the FEM problem
+        layup_b = self.FEM.layups[0]
+        layup_c = self.FEM.layups[1]
+        # Compute the maximum core height
+        hc = -layup_b.zc - layup_b.hA/2 + layup_c.zc - layup_c.hA/2
+        h_values = np.linspace(0, hc, 100)
+        # List for the stiffness values
+        D_list_1 = []
+        D_list_2 = []
+        for hi in h_values:
+            layup_bn = FEMOL.Layup(plies=layup_b.angles, material=layup_b.mtr, symetric=False,
+                                   z_core=-hi / 2 - layup_b.hA / 2)
+            layup_cn = FEMOL.Layup(plies=layup_c.angles, material=layup_c.mtr, symetric=False,
+                                   z_core=hi / 2 + layup_c.hA / 2)
+            D_list_1.append(layup_bn.D_mat[0, 0] + layup_cn.D_mat[0, 0])
+            D_list_2.append(layup_bn.D_mat[1, 1] + layup_cn.D_mat[1, 1])
 
-        # Create the X vector for interpolation
-        X_interp = (np.array(D_list) / np.max(D_list)) ** (1/self.p)
-        X_interp = np.append([0], X_interp)
-        zcoords = np.append([0], zcoords)
+        D_b_1 = FEMOL.Layup(plies=layup_b.angles, material=layup_b.mtr, symetric=False).D_mat[0, 0]
+        D_b_2 = FEMOL.Layup(plies=layup_b.angles, material=layup_b.mtr, symetric=False).D_mat[1, 1]
+        D_c_1 = D_list_1[-1] - D_b_1
+        D_c_2 = D_list_2[-1] - D_b_2
+        X1 = (np.array(D_list_1) - D_b_1) / D_c_1
+        X2 = (np.array(D_list_2) - D_b_2) / D_c_2
+        X_interp = np.mean([X1, X2], axis=0) ** (1 / self.p)
+        # Append the first and last points
+        X_interp = np.append(0, X_interp)
+        X_interp = np.append(X_interp, 1)
+        h_values = np.append(0, h_values)
+        h_values = np.append(h_values, hc)
+
         # Create the interpolator
-        core_height_interp = interp1d(X_interp, zcoords)
-        self.height_interp = core_height_interp
+        core_height_interp = interp1d(X_interp, h_values)
         # Compute the core height values
         zcore = {}
         for key in self.mesh.cell_data['X']:
             zcore[key] = core_height_interp(self.mesh.cell_data['X'][key])
+            zcore[key][zcore[key] < 0] = h_values.min()
 
         self.mesh.cell_data['zc'] = zcore
 

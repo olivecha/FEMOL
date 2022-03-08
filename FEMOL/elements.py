@@ -1060,7 +1060,7 @@ class Q4(object):
             K_element[np.arange(5, 24, 6), np.arange(5, 24, 6)] = 1
             return K_element
 
-    def Me(self, material, thickness):
+    def Me(self, material=None, thickness=None, V=None):
         """
         Method returning the element mass matrix from the element material
         Parameters
@@ -1114,10 +1114,13 @@ class Q4(object):
             y_points = shape.T @ self.y
 
             # Mass tensor
-            V1 = np.identity(3) * material.rho * thickness
-            V2 = np.zeros((3, 3))
-            V3 = np.identity(3) * material.rho * (thickness ** 3)/12
-            V = np.vstack([np.hstack([V1, V2]), np.hstack([V2, V3])])
+            if V is not None:
+                pass
+            else:
+                V1 = np.identity(3) * material.rho * thickness
+                V2 = np.zeros((3, 3))
+                V3 = np.identity(3) * material.rho * (thickness ** 3)/12
+                V = np.vstack([np.hstack([V1, V2]), np.hstack([V2, V3])])
 
             # Integrate to find the element mass matrix
             Me = 0

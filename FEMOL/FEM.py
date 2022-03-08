@@ -16,6 +16,7 @@ import time
 
 __all__ = ['FEM_Problem', 'Mesh', 'Layup', ]
 
+
 class FEM_Problem(object):
     """
     A Class used to define a general structural FEM Problem
@@ -54,6 +55,7 @@ class FEM_Problem(object):
         self.force_domains = []
         self.layups = []
         self.F = np.zeros(self.N_dof * self.mesh.N_nodes)
+        self.V = None
 
     def plot(self):
         # TODO : plot forces for 6 dof
@@ -63,9 +65,9 @@ class FEM_Problem(object):
 
         fixed_dof_label_dict = {(0,): 'x displacement', (1,): 'y displacement', (2,): 'z displacement',
                                 (3,): 'x rotation', (4,): 'y rotation', (0, 1): 'x-y displacement',
-                                (2, 3): 'supported x', (2, 4): 'supported y', (0, 1, 2, 3, 4, 5): 'clamped',}
+                                (2, 3): 'supported x', (2, 4): 'supported y', (0, 1, 2, 3, 4, 5): 'clamped', }
 
-        single_dof_dict = {0: 'X', 1:'Y', 2:'Z', 3:'Tx', 4:'Ty', 5:'Tz'}
+        single_dof_dict = {0: 'X', 1: 'Y', 2: 'Z', 3: 'Tx', 4: 'Ty', 5: 'Tz'}
 
         fixed_dof_color_dict = {(0,): '#FF716A', (1,): '#FFBB6A', (2,): '#99FFA9',
                                 (3,): '#A0FF6A', (4,): '#6AFFDF', (0, 1): '#6A75FF',
@@ -81,7 +83,7 @@ class FEM_Problem(object):
         # Plot the fixed nodes and their degrees of freedom
         for domain, ddls in zip(self.fixed_domains, self.fixed_ddls):
             nodes = self.mesh.domain_nodes(domain)
-            try :
+            try:
                 label = fixed_dof_label_dict[tuple(ddls)]
                 color = fixed_dof_color_dict[tuple(ddls)]
             except KeyError:
@@ -142,11 +144,11 @@ class FEM_Problem(object):
                 C_G.append(material.shear_tensor(thickness))
 
         # Define attributes according to kind
-        self.tensors = [C_A[0],  C_D[0], C_G[0], C_B[0]]
+        self.tensors = [C_A[0], C_D[0], C_G[0], C_B[0]]
         self.ho = ho[0]
 
         if len(C_A) == 2:
-            self.coat_tensors = [C_A[1], C_D[1], C_G[1],  C_B[1]]
+            self.coat_tensors = [C_A[1], C_D[1], C_G[1], C_B[1]]
             self.coat_ho = ho[1]
             self.coating = True
 
@@ -183,7 +185,7 @@ class FEM_Problem(object):
     Solver
     """
 
-    def solve(self, verbose=True, filtre=None):
+    def solve(self, verbose=True, filtre=None, solve_from_zc=False, h_min=0):
         """
         solve the FEM from kind
         :return: FEM Result class associated to the Problem kind
@@ -193,7 +195,7 @@ class FEM_Problem(object):
             return self._displacement_solve(verbose=verbose)
 
         elif self.physics == 'modal':
-            return self._modal_solve(verbose=verbose, filtre=filtre)
+            return self._modal_solve(verbose=verbose, solve_from_zc=solve_from_zc, filtre=filtre, h_min=h_min)
 
     def _displacement_solve(self, verbose):
 
@@ -208,7 +210,7 @@ class FEM_Problem(object):
 
         return self.mesh
 
-    def _modal_solve(self, verbose, filtre=0):
+    def _modal_solve(self, verbose, solve_from_zc, filtre=0, h_min=0):
         """
         Modal solver for the eigen value problem
         """
@@ -221,6 +223,10 @@ class FEM_Problem(object):
         for mat in ['M', 'K']:
             if not hasattr(self, mat):
                 self.assemble(mat)
+
+        if solve_from_zc:
+            self._assemble_K(user_data=self._K_variable_core_laminate_data(h_min=h_min))
+            self._assemble_M(user_data=self._M_variable_core_laminate_data(h_min=h_min))
 
         w, v = self._scipy_modal_solve()
         # Transpose the eigen vectors
@@ -239,7 +245,7 @@ class FEM_Problem(object):
         # Defined eigen_filters
         eigen_filters = {0: self._filter_eigenvalues_0,
                          1: self._filter_eigenvalues_1,
-                         2: self._filter_eigenvalues_2,}
+                         2: self._filter_eigenvalues_2, }
 
         # Filter according to the chosen filter
         current_filter = eigen_filters[filtre]
@@ -306,7 +312,7 @@ class FEM_Problem(object):
             # Iterate while the frequencies are duplicates
             while np.isclose(w[i], w[i + j], atol=atol):
                 j += 1
-                if i+j == w.shape[0]:
+                if i + j == w.shape[0]:
                     break
             # If the frequency is relevant, add to output and keep index
             if w[i] > 1.1:
@@ -317,7 +323,7 @@ class FEM_Problem(object):
             # Skip to the next non-duplicate frequency
             i += j
 
-        return (np.array(w_out)*2*np.pi) ** 2, v[indexes]
+        return (np.array(w_out) * 2 * np.pi) ** 2, v[indexes]
 
     def _filter_mesh_modes(self, w, v):
         """
@@ -398,7 +404,7 @@ class FEM_Problem(object):
     Global Matrix Assembly Methods
     """
 
-    def _assemble_K(self, X=None, p=None):
+    def _assemble_K(self, X=None, p=None, user_data=None):
         """
         sparse matrix assembly
         Parameters
@@ -407,8 +413,10 @@ class FEM_Problem(object):
         p penalty factor
         """
         data = 0
-        # Compute the data vector of the sparse matrix
-        if self.mesh.structured:
+        if user_data is not None:
+            data = user_data
+
+        elif self.mesh.structured:
             if self.coating:
                 data = self._K_structured_mesh_data_coating(X, p)
 
@@ -426,9 +434,10 @@ class FEM_Problem(object):
 
         self.K = scipy.sparse.csr_matrix((data, (self.mesh.rows, self.mesh.cols)),
                                          shape=(self.N_dof * self.mesh.N_nodes, self.N_dof * self.mesh.N_nodes))
+
         self.K.sum_duplicates()
 
-    def _assemble_M(self, X=None, q=None):
+    def _assemble_M(self, X=None, q=None, user_data=None):
         """
         sparse mass matrix assembly
         Parameters
@@ -438,7 +447,10 @@ class FEM_Problem(object):
         """
         data = 0
         # Compute the data vector of the sparse matrix
-        if self.mesh.structured:
+        if user_data is not None:
+            data = user_data
+
+        elif self.mesh.structured:
             if self.coating:
                 data = self._M_structured_mesh_data_coat(X=X, q=q)
 
@@ -455,7 +467,7 @@ class FEM_Problem(object):
         data = self._apply_boundary_conditions_to_matrix_data(data)
 
         self.M = scipy.sparse.csr_matrix((data, (self.mesh.rows, self.mesh.cols)),
-                                         shape=(self.N_dof * self.mesh.N_nodes, self.N_dof * self.mesh.N_nodes))
+                                        shape=(self.N_dof * self.mesh.N_nodes, self.N_dof * self.mesh.N_nodes))
         self.M.sum_duplicates()
 
     def _assemble_F(self):
@@ -573,13 +585,13 @@ class FEM_Problem(object):
 
     def _K_unstructured_mesh_data_coating(self, X=None, p=None):
         """
-               Computes the global K matrix data vector for an unstructured mesh
-               for the base material case
+        Computes the global K matrix data vector for an unstructured mesh
+        for the base material case
 
-               Returns
-               -------
-               d : the data vector to build the global stiffness matrix
-               """
+        Returns
+        -------
+        d : the data vector to build the global stiffness matrix
+        """
         # Empty data and element stiffness array
         self.element_Ke_base = {'triangle': [], 'quad': []}
         self.element_Ke_coat = {'triangle': [], 'quad': []}
@@ -619,6 +631,42 @@ class FEM_Problem(object):
 
         return data
 
+    def _K_variable_core_laminate_data(self, h_min=0):
+        """
+        Creates the data vector from the mesh core height data
+        """
+        data = np.array([])
+        # Loop over the cell types in the mesh
+        for cell_type in self.mesh.contains:
+            # Loop over the cells
+            for cell, zc in zip(self.mesh.cells[cell_type], self.mesh.cell_data['zc'][cell_type]):
+                # Create the element
+                element = self.mesh.ElementClasses[cell_type](self.mesh.points[cell], self.N_dof)
+                # Compute the bending tensors
+                if zc > h_min:
+                    h = zc + self.layups[0].hA + self.layups[1].hA
+                    lam_base = FEMOL.laminate.Layup(material=self.materials[0],
+                                                    plies=self.layups[0].angles,
+                                                    symetric=False,
+                                                    z_core=-h/2 + self.layups[0].hA/2)
+                    lam_coat = FEMOL.laminate.Layup(material=self.materials[1],
+                                                    plies=self.layups[1].angles,
+                                                    symetric=False,
+                                                    z_core=h/2 - self.layups[1].hA/2)
+                    # Compute the element stiffness matrix
+                    Ke_base = element.Ke(lam_base.A_mat, lam_base.D_mat, lam_base.G_mat, lam_base.B_mat)
+                    Ke_coat = element.Ke(lam_coat.A_mat, lam_coat.D_mat, lam_coat.G_mat, lam_coat.B_mat)
+                else:
+                    lam_base = FEMOL.laminate.Layup(material=self.materials[0],
+                                                    plies=self.layups[0].angles,
+                                                    symetric=False)
+                    Ke_base = element.Ke(lam_base.A_mat, lam_base.D_mat, lam_base.G_mat, lam_base.B_mat)
+                    Ke_coat = np.zeros_like(Ke_base)
+
+                Ke = Ke_base.flatten() + Ke_coat.flatten()
+                data = np.append(data, Ke)
+        return data
+
     """
     M Matrix Assembly Core Methods
     """
@@ -640,7 +688,10 @@ class FEM_Problem(object):
             X = np.repeat(X, element.size ** 2) ** q
 
         # Element stiffness matrix data
-        Me = element.Me(self.materials[0], self.ho)
+        if self.V is not None:
+            Me = element.Me(V=self.V)
+        else:
+            Me = element.Me(self.materials[0], self.ho)
         data = np.tile(Me.reshape(-1), self.mesh.N_ele) * X
 
         return data
@@ -724,7 +775,7 @@ class FEM_Problem(object):
             # For each type of cell in the mesh (tri, quad)
             for cell_type in self.mesh.contains:
                 # For each cell corresponding to a cell type
-                for cell , Xe in zip(self.mesh.cells[cell_type], X[cell_type]):
+                for cell, Xe in zip(self.mesh.cells[cell_type], X[cell_type]):
                     # Create an element
                     element = self.mesh.ElementClasses[cell_type](self.mesh.points[cell], self.N_dof)
                     # Compute the element mass matrices
@@ -734,7 +785,7 @@ class FEM_Problem(object):
                     self.element_Me_base[cell_type].append(Me_base)
                     self.element_Me_coat[cell_type].append(Me_coat)
                     # Compute the actual element mass matrix and add to sparse matrix data
-                    Me = (Me_base + Me_coat  * Xe ** q).flatten()
+                    Me = (Me_base + Me_coat * Xe ** q).flatten()
                     data = np.append(data, Me)
         else:
             # For each cell type in the mesh
@@ -756,6 +807,30 @@ class FEM_Problem(object):
 
         return data
 
+    def _M_variable_core_laminate_data(self, h_min=0):
+        """
+        Mass matrix data for a variable height core assembly
+        """
+        data = np.array([])
+
+        # For each cell type in the mesh
+        for cell_type in self.mesh.contains:
+            # For each cell and Xe of a single cell type
+            for cell, zc in zip(self.mesh.cells[cell_type], self.mesh.cell_data['zc'][cell_type]):
+                # Create an element instance
+                element = self.mesh.ElementClasses[cell_type](self.mesh.points[cell], self.N_dof)
+                # Compute the element mass matrices
+                Me_base = element.Me(self.materials[0], self.ho)
+                if zc > h_min:
+                    Me_coat = element.Me(self.materials[1], self.coat_ho)
+                else:
+                    Me_coat = np.zeros_like(Me_base)
+                # Compute the complete Me
+                Me = (Me_base + Me_coat).flatten()
+                # add to data
+                data = np.append(data, Me)
+
+        return data
 
     """
     Method for boundary conditions
