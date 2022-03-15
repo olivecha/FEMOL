@@ -5,6 +5,7 @@ import pygmsh
 import matplotlib.pyplot as plt
 import matplotlib.tri as tri
 import FEMOL.elements
+from FEMOL.utils import points_area
 import scipy.sparse
 from scipy.interpolate import griddata
 
@@ -588,6 +589,26 @@ class Mesh(object):
         points *= scale
         meshio_mesh = meshio.Mesh(points, cells)
         meshio_mesh.write(filename + '.stl')
+
+    def height_with_area(self, which, target_area_fraction, precision=10e-4):
+        """
+        Compute the contour line height of a mesh variable for wich the
+        circonspect area is equal to target_area_fraction.
+        :param which: mesh point data variable key
+        :param target_area_fraction: target area fraction [0, 1]
+        :param precision: precision of the returned height
+        :return: height of the contour line
+        """
+        h = 0
+        h_max = self.point_data[which].max()
+        increment = precision * h_max
+        all_area = points_area(self.points)
+        area = all_area
+        while (area/all_area) > target_area_fraction:
+            h += increment
+            points = self.points[self.point_data['zc'] > h, :]
+            area = points_area(points)
+        return h
 
 
 class MeshPlot(object):

@@ -480,6 +480,11 @@ class SIMP_VIBE(object):
         move = 0.3
         # Flatten the X array
         X = np.hstack([X[cell_type] for cell_type in self.mesh.contains])
+        # remove negative values
+        if len(self.dlmbd[self.dlmbd < 0]) > (len(self.dlmbd)//2):
+            self.dlmbd[self.dlmbd <= 0] = -self.dlmbd[self.dlmbd <= 0]
+        else:
+            self.dlmbd[self.dlmbd < 0] = 0
 
     # Find the lagrange multiplier
         while (l2 - l1) > 1e-4:
@@ -487,8 +492,7 @@ class SIMP_VIBE(object):
             lmid = 0.5 * (l1 + l2)
             # Move by an increment
             X1 = X + move
-            # remove negative values
-            self.dlmbd[self.dlmbd < 0] = 0
+
             # Multiply by the sensibility
             X2 = X * (self.dlmbd / lmid) ** 0.3
             # Take the min between move and sensibilities

@@ -220,7 +220,7 @@ def general_flax():
     name = 'general_flax'
     Ex = 19e9
     Ey = 2.9e9
-    Es = 2.5e9
+    Es = 1.6e9
     vx = 0.28
     ho = 0.00033
     rho = 1100

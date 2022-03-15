@@ -4,6 +4,7 @@ import FEMOL
 import FEMOL.misc
 import os
 
+
 class MyTestCase(unittest.TestCase):
 
     def test_write_load(self):
@@ -91,6 +92,12 @@ class MyTestCase(unittest.TestCase):
         problem.define_materials(material1, material1)
         problem.define_tensors(1, 1)  # thick=1
         w, v = problem.solve(filtre=0)
+        self.assertIsNotNone(w)
+
+    def test_height_with_area(self):
+        mesh = FEMOL.mesh.load_vtk('data/height_with_area_mesh.vtk')
+        h = mesh.height_with_area('zc', 0.5)
+        self.assertTrue(np.isclose(h, 0.0129))
 
 
 if __name__ == '__main__':

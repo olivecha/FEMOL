@@ -67,6 +67,17 @@ def plot_arc(x0, x1, pos_x, pos_y, r, side):
         ax.plot(x, y1_2, color='k')
 
 
+def plot_ellipse_arc(center, a, b, theta_start, theta_stop):
+    """ Plot an ellipse arc with dimensions a, b from theta start to theta stop at center"""
+    ax = plt.gca()
+    a, b = a / 2, b / 2
+    theta = np.linspace(theta_start, theta_stop)
+    r = (a * b) / np.sqrt((b * np.cos(theta)) ** 2 + (a * np.sin(theta)) ** 2)
+    x = r * np.cos(theta) + center[0]
+    y = r * np.sin(theta) + center[1]
+    ax.plot(x, y, color='k')
+
+
 def plot_arc2(sta, c, sto, flip1=-1, flip2=1):
     r = np.sqrt((sta[0] - c[0]) ** 2 + (sta[1] - c[1]) ** 2)
     A1 = np.arctan2(sta[1] - c[1], sta[0] - c[0])
@@ -76,11 +87,6 @@ def plot_arc2(sta, c, sto, flip1=-1, flip2=1):
     y = flip2 * r * np.sin(T) + c[1]
     ax = plt.gca()
     ax.plot(x, y, color='k')
-
-
-def plot_ellipse_arc():
-    # TODO
-    pass
 
 
 def plot_line(p1, p2):
@@ -178,11 +184,12 @@ def guitar_outline(Lx, Ly):
 def guitar_outline2(L):
     ax = plt.gca()
     ax.set_aspect('equal')
-    # TODO : Use ellipse arcs
-    ellipse1 = patches.Ellipse((0.25 * L, 0.38 * L), 0.50 * L, 0.76 * L, fill=False)
-    ellipse4 = patches.Ellipse((0.8175 * L, 0.38 * L), 0.365 * L, 0.58 * L, fill=False)
-    ax.add_patch(ellipse1)
-    ax.add_patch(ellipse4)
+    # Ellipse arc 1 (left side)
+    a, b, c = 0.50 * L, 0.76 * L, (0.25 * L, 0.38 * L)
+    FEMOL.utils.plot_ellipse_arc(c, a, b, np.pi / 2, 3 * np.pi / 2)
+    # Ellipse arc 2 (right side)
+    a, b, c = 0.365 * L, 0.58 * L, (0.8175 * L, 0.38 * L)
+    FEMOL.utils.plot_ellipse_arc(c, a, b, -np.pi / 2, np.pi / 2)
     # Top 1
     p = FEMOL.domains.create_polynomial(0.25 * L, 0.76 * L, 0.625 * L, (0.71225 - 0.1645 / 2) * L, 0)
     x = np.linspace(0.25 * L, 0.625 * L, 100)
@@ -421,5 +428,50 @@ def elevated_isotropic_tensor(t, z, mtr):
     D = Ix * E / (1 - mu ** 2) * np.array([[1, mu, 0],
                                           [mu, 1, 0],
                                           [0, 0, (1 - mu) / 2], ])
-
     return D
+
+
+def angle(point, center):
+    """Return the angle of a point on a circle at center"""
+    return np.arctan2(point[0] - center[0], point[1] - center[1])
+
+
+def distance(point, center):
+    """Return the distance of a point to a center point"""
+    return np.sqrt((point[0] - center[0])**2 + (point[1] - center[1])**2)
+
+
+def points_area(points, subdivision=20):
+    """
+    Find the area containing the points
+    :param points: a point scatter
+    :param subdivision: subdivisions used by the algorithm
+    :return: area
+    """
+    # convert to numpy
+    points = np.array(points)
+    center = (np.mean(points[:, 0]), np.mean(points[:, 1]))
+    # Sort the points
+    angles = [angle((xi, yi), center) for xi, yi in points[:, :2]]
+    pts_s = points.copy()[np.argsort(angles), :]
+    angles = np.sort(angles)
+    # radial integration divided in 100
+    distances = []
+    step = pts_s.shape[0]//subdivision
+    i = 0
+    while True:
+        try:
+            distances.append(np.max([distance(point, center) for point in pts_s[i:i+step]]))
+            i += step
+        except ValueError:
+            break
+
+    area = 0
+    T = (2*np.pi)/subdivision
+    for i, _ in enumerate(distances[:-1]):
+        hyp = min(distances[i], distances[i+1])
+        b = max(distances[i], distances[i+1])
+        h = hyp*np.sin(T)
+        area += (b*h)/2
+
+    return area

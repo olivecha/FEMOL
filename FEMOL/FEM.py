@@ -267,6 +267,7 @@ class FEM_Problem(object):
             w, v = scipy.linalg.eigh(self.K.toarray(), self.M.toarray())
         except scipy.linalg.LinAlgError:
             w, v = scipy.linalg.eig(self.K.toarray(), self.M.toarray())
+            w = np.real(w)
         return w, v
 
     def _filter_eigenvalues_0(self, w, v):
