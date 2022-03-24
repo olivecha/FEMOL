@@ -1,13 +1,19 @@
+import scipy.sparse.linalg
+
 import FEMOL.utils
 import FEMOL.elements
 # Numpy
 import numpy as np
 # Scipy
 from scipy.interpolate import interp1d
+import scipy.sparse
 # Matplotlib
 import matplotlib.pyplot as plt
 # Ipython
 from IPython.display import clear_output
+# Python
+import sys
+import time
 
 __all__ = ['SIMP_COMP', 'SIMP_VIBE']
 
@@ -50,6 +56,7 @@ class SIMP_COMP(object):
         # Loop parameters
         self.change = 1
         self.loop = 0
+        start_time = FEMOL.utils.unique_time_string()
 
         while (self.change > converge) & (self.loop < max_iter):
             # Iterate
@@ -78,14 +85,13 @@ class SIMP_COMP(object):
             if plot:
                 self._plot_iteration()
             else:
-                info = "Iteration : {loop}, variation " \
-                       ": {var}, objective : {obj}".format(loop=self.loop,
-                                                           var=np.around(self.change * 100, 1),
-                                                           obj=np.abs(np.around(self.c, 3)))
+                info = f"Iteration : {self.loop}, " \
+                       f"variation: {np.around(self.change * 100, 1)}," \
+                       f" objective : {np.abs(np.around(self.c, 3))}"
                 print(info)
 
-        if save:
-            self._save_TOM_result()
+            if save:
+                self._save_TOM_result(start_time)
 
         return self.mesh
 
@@ -103,7 +109,7 @@ class SIMP_COMP(object):
             if self.mesh.structured:
                 X_plot = self.mesh.cell_data['X']
                 X_plot = np.hstack([X_plot[cell_type] for cell_type in self.mesh.contains])
-                X_plot = X_plot.reshape(N, N)
+                X_plot = np.rot90(X_plot.reshape(N, N))
                 plt.imshow(np.flip(X_plot, 0), cmap='Greys')
             else:
                 raise ValueError
@@ -114,10 +120,10 @@ class SIMP_COMP(object):
         ax.set_title(title)
         plt.pause(0.1)
 
-    def _save_TOM_result(self):
+    def _save_TOM_result(self, timestring):
         # Try saving the file in results
         try:
-            filename = 'Results/_topopt_cache/TOM_' + FEMOL.utils.unique_time_string()
+            filename = 'Results/_topopt_cache/TOM_' + timestring
             self.mesh.save(filename)
         # If it does not work save it here
         except FileNotFoundError:
@@ -348,7 +354,7 @@ class SIMP_VIBE(object):
     Supported objective functions:
     'max eig': Fundamental eigenvalue maximization
     """
-    def __init__(self, Problem, volfrac=0.5, p=3, q=1, rmin=1.5, objective='max eig'):
+    def __init__(self, Problem, volfrac=0.5, p=3, q=1, rmin=1.5, objective='max eig', FEM_solver_type='fast'):
         """
         Constructor for the Topology Optimisation Problem
         Problem: FEMOL FEM Problem instance
@@ -368,7 +374,13 @@ class SIMP_VIBE(object):
         self.FEM = Problem
         self.mesh = Problem.mesh
         self.mesh.compute_element_centers()
-        self.FEM_solver = self._SIMP_modal_solver
+        self.FEM_solver_type = FEM_solver_type
+        if self.FEM_solver_type == 'fast':
+            self.FEM_solver = self._SIMP_fast_modal_solver
+        elif self.FEM_solver_type == 'dense':
+            self.FEM_solver = self._SIMP_dense_modal_solver()
+        elif self.FEM_solver_type == 'sparse':
+            self.FEM_solver = self._SIMP_sparse_modal_solver
         kind = 'coating' * self.FEM.coating + 'solid' * (not self.FEM.coating)
         self.objective_function = OBJECTIVE_FUNS[objective][kind]
 
@@ -381,10 +393,19 @@ class SIMP_VIBE(object):
         self.lmbds = []
         self.all_lmbds = []
         self.eigen_vectors = []
+        self.FEM_solver_used = []
+        # Define the iteration variables
+        self.v = 0
+        self.lmbd = 0
+        self.loop = 0
 
-    def solve(self, v_ref,  converge=0.01, min_iter=1, max_iter=100, plot=True, save=True):
+    def solve(self, v_ref,  converge=0.01, min_iter=1, max_iter=100, plot=True,
+              save=True, verbose=True, convergence_criteria='change', sigma=0):
         """
                SIMP Optimization solver
+               :param logfile:
+               :param convergence_criteria:
+               :param verbose:
                :param converge: Convergence for density
                :param max_iter: Maximum
                :param plot: Plot the transient designs
@@ -395,15 +416,23 @@ class SIMP_VIBE(object):
         # Loop parameters
         self.change = 1
         self.loop = 0
-        not_solved = True
+        solved = False
+        TOM_start_time = FEMOL.utils.unique_time_string()
 
-        while not_solved:
+        while not solved:
             # Iterate
             self.loop += 1
 
             # Iteration
             X_old = self.X
-            self.lmbd, self.v = self.FEM_solver(X_old, v_ref=v_ref)
+            if self.FEM_solver_type == 'dense':
+                if self.loop == 1:
+                    self.lmbd, self.v = self.FEM_solver(X_old, v_ref=v_ref, verbose=True)
+                else:
+                    self.lmbd, self.v = self.FEM_solver(X_old, v_ref=v_ref, verbose=False)
+            elif self.FEM_solver_type == 'sparse':
+                self.lmbd, self.v = self.FEM_solver(X_old, v_ref=v_ref, sigma=sigma)
+
             self.lmbds.append(self.lmbd)
             self.eigen_vectors.append(self.v)
             self.lmbd, self.dlmbd = self.objective_function(X_old)
@@ -425,24 +454,29 @@ class SIMP_VIBE(object):
             # Iteration information
             if plot:
                 self._plot_iteration()
-            else:
-                info = 'Iteration : {it}, Variation : {va}, EigenVal : {eg}'.format(it = self.loop,
-                                                                                    va = self.change,
-                                                                                    eg = self.lmbd)
+            if verbose:
+                info = 'Iteration : {it}, Variation : {va}, EigenVal : {eg}'.format(it=self.loop,
+                                                                                    va=self.change,
+                                                                                    eg=self.lmbd)
                 print(info)
 
-            if (self.change < converge) and (self.loop > min_iter):
-                not_solved = False
-            elif self.loop == max_iter:
-                not_solved = False
+            if convergence_criteria == 'change':
+                if (self.change < converge) and (self.loop > min_iter):
+                    solved = True
+            elif convergence_criteria == 'objective':
+                if np.abs(np.mean(self.lmbds[-3:-1]) - self.lmbds[-1]) < converge:
+                    solved = True
+            if self.loop == max_iter:
+                solved = True
 
-        # add the corresponding core height to the mesh
-        self.mesh = self.density_to_core_height()
-        # add the density values with penalty
-        self.mesh.cell_data['X_real'] = {'quad': self.mesh.cell_data['X']['quad'] ** 3}
-
-        if save:
-            self._save_TOM_result()
+            # Save at each iteration
+            if save:
+                # Add the core height transformation
+                self.mesh = self.density_to_core_height()
+                # Add the penalized density values
+                self.mesh.cell_data['X_real'] = {'quad': self.mesh.cell_data['X']['quad'] ** 3}
+                # save for the current iteration
+                self._save_TOM_result(TOM_start_time)
 
         return self.mesh
 
@@ -464,14 +498,14 @@ class SIMP_VIBE(object):
         ax.set_title(title)
         plt.pause(0.1)
 
-    def _save_TOM_result(self):
+    def _save_TOM_result(self, timestring):
         # Try saving the file in results
         try:
-            filename = 'Results/_topopt_cache/TOM_' + FEMOL.utils.unique_time_string()
+            filename = 'Results/_topopt_cache/TOM_' + timestring
             self.mesh.save(filename)
         # If it does not work save it here
         except FileNotFoundError:
-            filename = 'TOM_' + FEMOL.utils.unique_time_string()
+            filename = 'TOM_' + timestring
             self.mesh.save(filename)
 
     def _get_new_x(self, X):
@@ -481,10 +515,13 @@ class SIMP_VIBE(object):
         # Flatten the X array
         X = np.hstack([X[cell_type] for cell_type in self.mesh.contains])
         # remove negative values
-        if len(self.dlmbd[self.dlmbd < 0]) > (len(self.dlmbd)//2):
+        if len(self.dlmbd[self.dlmbd < 0]) > (len(self.dlmbd)//4):
             self.dlmbd[self.dlmbd <= 0] = -self.dlmbd[self.dlmbd <= 0]
         else:
             self.dlmbd[self.dlmbd < 0] = 0
+
+        if np.sum(self.dlmbd) < 1:
+            self.dlmbd *= 1/self.dlmbd.max()
 
     # Find the lagrange multiplier
         while (l2 - l1) > 1e-4:
@@ -511,6 +548,7 @@ class SIMP_VIBE(object):
             if hasattr(self, 'void_domain'):
                 X_new = self._apply_void_domain(self.void_domain, X_new)
             # Do the bijection
+            # TODO : use element area for unstructured meshes
             if (np.sum(X_new) - self.f * self.mesh.N_ele) > 0:
                 l1 = lmid
             else:
@@ -577,7 +615,7 @@ class SIMP_VIBE(object):
         Applies a constricted solid domain to the X vector
         """
         for i, element in enumerate(self.mesh.cells[self.mesh.contains[0]]):
-            if np.array([domain(*coord) for coord in self.mesh.points[element]]).all():
+            if np.array([domain(*coord[:2]) for coord in self.mesh.points[element]]).all():
                 X[i] = 1
         return X
 
@@ -586,22 +624,62 @@ class SIMP_VIBE(object):
         Applies a constricted void domain to the X vector
         """
         for i, element in enumerate(self.mesh.cells[self.mesh.contains[0]]):
-            if np.array([domain(*coord) for coord in self.mesh.points[element]]).all():
+            if np.array([domain(*coord[:2]) for coord in self.mesh.points[element]]).all():
                 X[i] = 0.001
         return X
 
-    def _SIMP_modal_solver(self, X, v_ref):
+    def _SIMP_dense_modal_solver(self, X, v_ref, verbose=True):
         """
-        Solve the FEM modal problem with the current element density values
-        Returns the eigenvectors
+        Solve the FEM modal problem using scipy.linalg.eig
+        More precise than the sparse or fast solvers but very slow
         """
         self.FEM.assemble('K', X=X, p=self.p)
         self.FEM.assemble('M', X=X, q=self.q)
-        w, v = self.FEM.solve(verbose=False, filtre=0)
+        now = time.time()
+        w, v = scipy.linalg.eig(self.FEM.K.toarray(), self.FEM.M.toarray())
+        print(f'Solved in {time.time() - now} s')
+        w = np.sqrt(np.real(w)) / 2*np.pi
+        self.all_lmbds.append(w)
+        mac = [FEMOL.utils.MAC(vi, v_ref) for vi in v.T]
+        print('Best mac match (dense solver) :', np.max(mac))
+        i = np.argmax(mac)
+        return w[i], v.T[i]
+
+    def _SIMP_fast_modal_solver(self, X, v_ref, verbose=True):
+        """
+        Solve the FEM modal problem with the current element density values
+        Returns the eigenvectors uses scipy.linalg.eigh when possible
+        """
+        self.FEM.assemble('K', X=X, p=self.p)
+        self.FEM.assemble('M', X=X, q=self.q)
+        w, v = self.FEM.solve(verbose=verbose, filtre=0)
         self.all_lmbds.append(w)
         mac = [FEMOL.utils.MAC(vi, v_ref) for vi in v]
+        print('Best mac match (fast solver) :', np.max(mac))
         i = np.argmax(mac)
         return w[i], v[i]
+
+    def _SIMP_sparse_modal_solver(self, X, v_ref, sigma=0, verbose=True, k=20):
+        """
+        Solve the FEM modal problem using scipy.sparse.linalg.eigsh
+        """
+        self.FEM.assemble('K', X=X, p=self.p)
+        self.FEM.assemble('M', X=X, q=self.q)
+        K, M = self.FEM.K, self.FEM.M
+        w_sp, v_sp = scipy.sparse.linalg.eigsh(K, M=M, k=k, sigma=sigma)
+        f_sp = np.sqrt(w_sp)/(2*np.pi)
+        mac_res = [FEMOL.utils.MAC(vi, v_ref) for vi in v_sp.T]
+        best_vi = np.max(mac_res)
+        print('Best mac match (sparse solver) :', best_vi)
+        if best_vi > 0.01:
+            self.FEM_solver_used.append('sparse')
+            i = np.argmax(mac_res)
+            return f_sp[i], v_sp.T[i]
+        else:
+            print('No corresponding eigenvector found using the modal assurance criterion using sparse solve')
+            print('Falling back on the dense solve')
+            self.FEM_solver_used.append('dense')
+            return self._SIMP_fast_modal_solver(X=X, v_ref=v_ref, verbose=verbose)
 
     def _solid_max_eigs_objective_function(self, X):
         """

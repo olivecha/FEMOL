@@ -6,3 +6,4 @@ from . import laminate
 from . import elements
 from . import mesh
 from . import domains
+from . import problems

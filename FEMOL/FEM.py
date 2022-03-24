@@ -13,6 +13,7 @@ import scipy.sparse.linalg
 import matplotlib.pyplot as plt
 # Python
 import time
+import signal
 
 __all__ = ['FEM_Problem', 'Mesh', 'Layup', ]
 
@@ -185,41 +186,35 @@ class FEM_Problem(object):
     Solver
     """
 
-    def solve(self, verbose=True, filtre=None, solve_from_zc=False, h_min=0):
+    def solve(self, verbose=True, filtre=0, solve_from_zc=False, h_min=0, modal_solver='fast', sigma=None):
         """
         solve the FEM from kind
         :return: FEM Result class associated to the Problem kind
         """
-
         if self.physics == 'displacement':
             return self._displacement_solve(verbose=verbose)
 
         elif self.physics == 'modal':
-            return self._modal_solve(verbose=verbose, solve_from_zc=solve_from_zc, filtre=filtre, h_min=h_min)
+            return self._modal_solve(verbose=verbose, solve_from_zc=solve_from_zc, filtre=filtre, h_min=h_min,
+                                     modal_solver=modal_solver, sigma=sigma)
 
     def _displacement_solve(self, verbose):
-
+        """ General displacement solving function to allow multiple handling linear solvers"""
         # Assemble if not assembled
         if not hasattr(self, 'K'):
             self.assemble('K')
-
-        if verbose:
-            print('solving with scipy')
-        U = self._scipy_displacement_solve()
+        # Solve with scipy
+        U = self._scipy_displacement_solve(verbose=verbose)
+        # add the solution to the mesh
         self.mesh.add_displacement(U, self.N_dof)
-
+        # return the mesh with displacement values
         return self.mesh
 
-    def _modal_solve(self, verbose, solve_from_zc, filtre=0, h_min=0):
+    def _modal_solve(self, verbose, solve_from_zc=False, filtre=0, h_min=0, modal_solver=None, sigma=None):
         """
-        Modal solver for the eigen value problem
+        General modal solver for the eigen value problem
         """
-        # TODO : Add eigen vectors into mesh
-
-        if verbose:
-            now = time.time()
-            print('solving using scipy')
-
+        # TODO : Add eigen vectors into mesh ?
         for mat in ['M', 'K']:
             if not hasattr(self, mat):
                 self.assemble(mat)
@@ -228,7 +223,13 @@ class FEM_Problem(object):
             self._assemble_K(user_data=self._K_variable_core_laminate_data(h_min=h_min))
             self._assemble_M(user_data=self._M_variable_core_laminate_data(h_min=h_min))
 
-        w, v = self._scipy_modal_solve()
+        if modal_solver == 'fast':
+            w, v = self._scipy_modal_solve(verbose=verbose)
+        elif modal_solver == 'dense':
+            w, v = scipy.linalg.eig(self.K.toarray(), self.M.toarray())
+        elif modal_solver == 'sparse':
+            w, v = scipy.sparse.linalg.eigsh(self.K, M=self.M, k=10, sigma=sigma)
+
         # Transpose the eigen vectors
         v = v.T
         # Remove Nan values and 0/negative values
@@ -239,36 +240,94 @@ class FEM_Problem(object):
         v = v[w > 0]
         w = w[w > 0]
 
-        if verbose:
-            print('solved in : ', time.time() - now, ' s')
-
         # Defined eigen_filters
         eigen_filters = {0: self._filter_eigenvalues_0,
                          1: self._filter_eigenvalues_1,
                          2: self._filter_eigenvalues_2, }
 
         # Filter according to the chosen filter
+        # TODO : add saved eigenvectors in the tests to remove filters altogether
         current_filter = eigen_filters[filtre]
         w, v = current_filter(w, v)
 
         return np.sqrt(w) / (2 * np.pi), v
 
-    def _scipy_displacement_solve(self):
+    def _scipy_displacement_solve(self, verbose=True):
+        now = time.time()
+        if verbose:
+            print('Solving using scipy.linalg.spsolve(K, F)')
         U = scipy.sparse.linalg.spsolve(self.K, self.F)
+        if verbose:
+            print(f'Solved in {time.time() - now} s')
         return U
 
-    def _scipy_modal_solve(self):
+    def _scipy_modal_solve(self, verbose=True):
         """
         Eigenvalue and eigenvectors solver using scipy
         """
         # TODO : Optimize eigenvalue solver (sparse + driver)
+        now = time.time()
         # Solve the eigenvalue problem
-        try:
+        try:  # regular symmetric positive definite solve
+            if verbose:
+                print('Solving using scipy.linalg.eigh(K, M)')
             w, v = scipy.linalg.eigh(self.K.toarray(), self.M.toarray())
+            if verbose:
+                print(f'solved in {time.time() - now} s')
         except scipy.linalg.LinAlgError:
-            w, v = scipy.linalg.eig(self.K.toarray(), self.M.toarray())
-            w = np.real(w)
+            try:  # changing the sign of M matrix
+                if verbose:
+                    print("Warning : non symmetric positive definite matrix," 
+                          "trying to solve using scipy.linalg.eigh(K, -M)")
+                w, v = scipy.linalg.eigh(self.K.toarray(), -self.M.toarray())
+                w = -1 * w
+                if verbose:
+                    print(f'solved in {time.time() - now} s')
+
+            except scipy.linalg.LinAlgError:
+                try:  # solving as M = M + cI
+                    w, v = self._scipy_super_sketchy_modal_solve(verbose=verbose)
+                except ValueError:
+                    w, v = self._scipy_super_slow_modal_solve(verbose=verbose)
         return w, v
+
+    def _scipy_super_sketchy_modal_solve(self, verbose=True):
+        """ Scipy symmetric positive definite modal solver
+            the mass matrix is scaled so that M = M + cI
+            """
+        now = time.time()
+        if verbose:
+            print('Warning : solving the eigenvalue problem as scipy.linalg.eigh(K, M + cI)')
+        K, M = self.K.toarray(), self.M.toarray()
+        c = 1e-3
+        while 1:
+            try:
+                w, v = scipy.linalg.eigh(K, M + c * np.identity(M.shape[0]))
+                w *= -c
+                break
+            # If c is too small a LinAlgError is raised
+            except scipy.linalg.LinAlgError:
+                c *= 10
+                if c > 1000:
+                    raise ValueError
+
+        if verbose:
+            print(f'Solved in {time.time() - now} s')
+        return w, v
+
+    def _scipy_super_slow_modal_solve(self, verbose=True):
+        """ super slow scipy general eigenvalue problem for dense matrices solver"""
+        now = time.time()
+        if verbose:
+            print("Warning : non symmetric positive definite matrix,"
+                  "falling back on scipy.linalg.eig(K, M) (slow af)")
+        w, v = scipy.linalg.eig(self.K.toarray(), self.M.toarray())
+        # output is complex
+        w = np.real(w)
+        if verbose:
+            print(f'solved in {time.time() - now} s')
+        return w, v
+
 
     def _filter_eigenvalues_0(self, w, v):
         """

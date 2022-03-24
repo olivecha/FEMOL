@@ -778,6 +778,17 @@ class Q4(object):
         self.N_dof = N_dof  # Number of degrees of freedom
         self.size = self.N_nodes * N_dof  # Element size in the global matrix
 
+    def area(self):
+        """
+        Method returning the area of the element
+        :return: float Area
+        """
+        x, y = self.x, self.y
+        A1 = x[0] * (y[1] - y[2]) + x[1] * (y[2] - y[0]) + x[2] * (y[0] - y[1])
+        A2 = x[0] * (y[2] - y[3]) + x[2] * (y[3] - y[0]) + x[3] * (y[0] - y[2])
+        A = A1 / 2 + A2 / 2
+        return A
+
     def make_shape_xy(self):
         """
         Element shape function in node coordinates

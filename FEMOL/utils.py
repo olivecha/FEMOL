@@ -4,7 +4,7 @@ import os
 import matplotlib.pyplot as plt
 from matplotlib import animation
 import datetime
-from matplotlib import patches
+from scipy.interpolate import griddata
 
 """
 Plot/Validation functions
@@ -195,7 +195,6 @@ def guitar_outline2(L):
     x = np.linspace(0.25 * L, 0.625 * L, 100)
     y = p[0] * x ** 3 + p[1] * x ** 2 + p[2] * x + p[3]
     ax.plot(x, y, color='k')
-
     # Top 2
     p = FEMOL.domains.create_polynomial(0.625 * L, 0.71225 - 0.1645 / 2, 0.8175 * L, 0.67, 0)
     x = np.linspace(0.625, 0.8175, 100)
@@ -213,6 +212,8 @@ def guitar_outline2(L):
     ax.plot(x, y, color='k')
     # Soundhole
     FEMOL.utils.plot_circle(0.673 * L, 0.38 * L, 0.175 * L / 2)
+    # Fix limits
+    ax.set_xlim(0-0.01, L+0.01)
 
 
 """
@@ -430,6 +431,9 @@ def elevated_isotropic_tensor(t, z, mtr):
                                           [0, 0, (1 - mu) / 2], ])
     return D
 
+"""
+Mesh data manipulation
+"""
 
 def angle(point, center):
     """Return the angle of a point on a circle at center"""
@@ -475,3 +479,19 @@ def points_area(points, subdivision=20):
         area += (b*h)/2
 
     return area
+
+
+def interpolate_vector(old_vector, old_mesh, new_mesh, N_dof=6):
+    """ Interpolate a displacement vector on a new mesh"""
+    # empty array for the new vector
+    new_vector = np.zeros(new_mesh.points.shape[0]*6)
+    # Interpolate each degree of freedom
+    for i in range(N_dof):
+        # Interpolate at the new mesh points
+        vi_linear = griddata(old_mesh.points[:, :2], old_vector[i::N_dof], new_mesh.points[:, :2], method='linear')
+        vi_near = griddata(old_mesh.points[:, :2], old_vector[i::N_dof], new_mesh.points[:, :2], method='nearest')
+        vi = vi_linear
+        # Use the nearest value where the linear value is NaN (boundary)
+        vi[np.isnan(vi_linear)] = vi_near[np.isnan(vi_linear)]
+        new_vector[i::N_dof] = vi
+    return new_vector

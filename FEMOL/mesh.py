@@ -78,6 +78,35 @@ class Mesh(object):
         # Compute the element centers
         self.compute_element_centers()
 
+        # Compute the element areas
+        self.areas = self.element_areas()
+
+        # Fix the quads if applicable
+        if 'quad' in self.contains:
+            if (self.areas['quad'] < 0).any():
+                self.fix_quadrilaterals()
+
+    def element_areas(self):
+        """
+        Method to compute the areas of all the elements
+        :return: None
+        """
+        areas = {}
+        for cell_type in self.contains:
+            areas[cell_type] = []
+            for cell in self.cells[cell_type]:
+                element = self.ElementClasses[cell_type](self.points[cell])
+                areas[cell_type].append(element.area())
+            areas[cell_type] = np.array(areas[cell_type])
+
+        return areas
+
+    def fix_quadrilaterals(self):
+        """
+        Method to fix the quadrilateral elements having negative area
+        """
+        self.cells['quad'][self.areas['quad'] < 0] = np.flip(self.cells['quad'][self.areas['quad'] < 0], axis=1)
+
     def display(self, backend='matplotlib', color='#D1E8FF', plot_nodes=False):
         """
         Plot the mesh using the specified backend
@@ -715,7 +744,7 @@ class MeshPlot(object):
         self.mesh.wrap(name, factor)
         self._empty_wrapped_2D()
 
-    def mode(self, v, wrapped=False, N_dof=6):
+    def mode(self, v, wrapped=False, N_dof=6, **kwargs):
         """
         Plots the eigenmode corresponding to vector v
         :param v: eigenvector
@@ -723,7 +752,7 @@ class MeshPlot(object):
         :return: None
         """
         self.mesh.add_mode('mode_plot', v, N_dof)
-        self.point_data('mode_plot_Uz', wrapped=wrapped)
+        self.point_data('mode_plot_Uz', wrapped=wrapped, **kwargs)
 
     def mode_Z(self, name):
         self.point_data(name + '_' + 'Uz', wrapped=False)

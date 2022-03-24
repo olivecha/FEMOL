@@ -204,5 +204,17 @@ class MyTestCase(unittest.TestCase):
         # Test that the error is below 4%
         self.assertTrue(((100 * np.abs(REF_W - FEM_W) / REF_W) < 4).all())
 
+    def test_area_method(self):
+        """
+        Test that the area method returns the right value
+        """
+        points = np.array([[0, 0],
+                           [1, 0],
+                           [1, 1],
+                           [0, 1]])
+        element = FEMOL.elements.Q4(points)
+        self.assertTrue(element.area() == 1)
+
+
 if __name__ == '__main__':
     unittest.main()
