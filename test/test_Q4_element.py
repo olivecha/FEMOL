@@ -1,10 +1,9 @@
 import unittest
-import sys
 import numpy as np
 import scipy.io
-sys.path.append('../')
 import FEMOL
 import FEMOL.test_utils
+
 
 class MyTestCase(unittest.TestCase):
     """

@@ -84,7 +84,8 @@ class Mesh(object):
         # Fix the quads if applicable
         if 'quad' in self.contains:
             if (self.areas['quad'] < 0).any():
-                self.fix_quadrilaterals()
+                self.fix_quadrilaterals()  # fix the inverted quads
+                self.areas = self.element_areas()  # recompute the areas
 
     def element_areas(self):
         """

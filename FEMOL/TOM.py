@@ -384,6 +384,10 @@ class SIMP_VIBE(object):
         kind = 'coating' * self.FEM.coating + 'solid' * (not self.FEM.coating)
         self.objective_function = OBJECTIVE_FUNS[objective][kind]
 
+        # mesh element area to enforce density constraint
+        self.element_areas = np.hstack([self.mesh.areas[cell_type] for cell_type in self.mesh.contains])
+        self.mesh_area = np.sum(self.element_areas)
+
         # define the TOM parameters
         self.f = volfrac
         self.rmin = rmin
@@ -425,13 +429,10 @@ class SIMP_VIBE(object):
 
             # Iteration
             X_old = self.X
-            if self.FEM_solver_type == 'dense':
-                if self.loop == 1:
-                    self.lmbd, self.v = self.FEM_solver(X_old, v_ref=v_ref, verbose=True)
-                else:
-                    self.lmbd, self.v = self.FEM_solver(X_old, v_ref=v_ref, verbose=False)
-            elif self.FEM_solver_type == 'sparse':
-                self.lmbd, self.v = self.FEM_solver(X_old, v_ref=v_ref, sigma=sigma)
+            if self.loop == 1:
+                self.lmbd, self.v = self.FEM_solver(X_old, v_ref=v_ref, verbose=True)
+            else:
+                self.lmbd, self.v = self.FEM_solver(X_old, v_ref=v_ref, verbose=False)
 
             self.lmbds.append(self.lmbd)
             self.eigen_vectors.append(self.v)
@@ -477,6 +478,7 @@ class SIMP_VIBE(object):
                 self.mesh.cell_data['X_real'] = {'quad': self.mesh.cell_data['X']['quad'] ** 3}
                 # save for the current iteration
                 self._save_TOM_result(TOM_start_time)
+                np.save('Results/_topopt_cache/eigvals_'+TOM_start_time, np.array(self.all_lmbds))
 
         return self.mesh
 
@@ -548,12 +550,18 @@ class SIMP_VIBE(object):
             if hasattr(self, 'void_domain'):
                 X_new = self._apply_void_domain(self.void_domain, X_new)
             # Do the bijection
-            # TODO : use element area for unstructured meshes
-            if (np.sum(X_new) - self.f * self.mesh.N_ele) > 0:
-                l1 = lmid
+            if self.mesh.structured:
+                if (np.sum(X_new) - self.f * self.mesh.N_ele) > 0:
+                    l1 = lmid
+                else:
+                    l2 = lmid
             else:
-                l2 = lmid
-        # Reshape X into a cell dict
+                if np.sum(X_new * self.element_areas)/self.mesh_area > self.f:
+                    l1 = lmid
+                else:
+                    l2 = lmid
+
+            # Reshape X into a cell dict
             X_new = np.split(X_new, [self.mesh.cells[self.mesh.contains[0]].shape[0]])
             X_new = {key: Xi for (key, Xi) in zip(self.mesh.contains, X_new)}
 
@@ -670,7 +678,8 @@ class SIMP_VIBE(object):
         f_sp = np.sqrt(w_sp)/(2*np.pi)
         mac_res = [FEMOL.utils.MAC(vi, v_ref) for vi in v_sp.T]
         best_vi = np.max(mac_res)
-        print('Best mac match (sparse solver) :', best_vi)
+        if verbose:
+            print('Best mac match (sparse solver) :', best_vi)
         if best_vi > 0.01:
             self.FEM_solver_used.append('sparse')
             i = np.argmax(mac_res)
