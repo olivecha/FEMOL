@@ -26,7 +26,7 @@ class GuitarSimpVibe(object):
     plies_flax = [0, 0, 0, 0, 0, 0, 0, 0, 0]
     flax_layup = FEMOL.laminate.Layup(material=flax, plies=plies_flax, symetric=False,
                                       z_core=-h / 2 + (n_plies_flax / 2) * flax.hi)
-    plies_carbon = [90, 90]
+    plies_carbon = [45, -45]
     carbon_layup = FEMOL.laminate.Layup(material=carbon, plies=plies_carbon, symetric=False,
                                         z_core=h / 2 - (n_plies_carbon / 2) * carbon.hi)
 
@@ -101,21 +101,24 @@ class GuitarModal(object):
         self.problem.define_tensors(self.flax_layup, self.carbon_layup)
         self.problem.add_fixed_domain(FEMOL.domains.outside_guitar(L=1))
 
-    def solve(self):
+    def solve(self, mac_find=True):
         # Solve the reference problem
         w_opt, v_opt = self.problem.solve()
-        # Find guitar reference eigenfrequencies and vectors
-        modes = ['T11', 'T21', 'T12', 'T31']
-        try:  # loading the reference eigenvectors
-            mac_vecs = [np.load(f'Results/guitar_modes/guitar_mode_{m}_lcar{str(self.lcar)[-2:]}.npy') for m in modes]
+        if mac_find:
+            # Find guitar reference eigenfrequencies and vectors
+            modes = ['T11', 'T21', 'T12', 'T31']
+            try:  # loading the reference eigenvectors
+                mac_vecs = [np.load(f'Results/guitar_modes/guitar_mode_{m}_lcar{str(self.lcar)[-2:]}.npy') for m in modes]
 
-        except FileNotFoundError:  # interpolate from existing ones
-            print('No existing reference eigenvectors, interpolating new ones...')
-            old_vecs = [np.load(f'Results/guitar_modes/guitar_mode_{m}_lcar04.npy') for m in modes]
-            old_mesh = FEMOL.mesh.guitar(lcar=0.04)
-            mac_vecs = [FEMOL.utils.interpolate_vector(v, old_mesh, self.mesh) for v in old_vecs]
-            for v, m in zip(mac_vecs, modes):
-                np.save(f'Results/guitar_modes/guitar_mode_{m}_lcar{str(self.lcar)[-2:]}.npy', v)
+            except FileNotFoundError:  # interpolate from existing ones
+                print('No existing reference eigenvectors, interpolating new ones...')
+                old_vecs = [np.load(f'Results/guitar_modes/guitar_mode_{m}_lcar04.npy') for m in modes]
+                old_mesh = FEMOL.mesh.guitar(lcar=0.04)
+                mac_vecs = [FEMOL.utils.interpolate_vector(v, old_mesh, self.mesh) for v in old_vecs]
+                for v, m in zip(mac_vecs, modes):
+                    np.save(f'Results/guitar_modes/guitar_mode_{m}_lcar{str(self.lcar)[-2:]}.npy', v)
 
-        idxs = [np.argmax([FEMOL.utils.MAC(vi, vref) for vi in v_opt]) for vref in mac_vecs]
-        return w_opt[idxs], v_opt[idxs]
+            idxs = [np.argmax([FEMOL.utils.MAC(vi, vref) for vi in v_opt]) for vref in mac_vecs]
+            return w_opt[idxs], v_opt[idxs]
+        else:
+            return w_opt, v_opt

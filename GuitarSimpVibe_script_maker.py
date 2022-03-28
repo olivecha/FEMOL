@@ -4,7 +4,7 @@ import FEMOL.utils
 # current variables
 LCAR = 0.03
 MAXITER = 20
-CONVERGENCE = 0.02
+CONVERGENCE = 0.03
 VOLFRAC = 0.27
 PENALITY = 1
 
