@@ -1,0 +1,49 @@
+______ Run parameters ______
+Mesh characteristic length : 0.03 
+Max number of iterations : 20 
+Convergence criterion : 3.0 % 
+Target volume fraction : 27.0 % 
+solving SIMP problem for mode T12 2022-03-28_04_36_26
+Solving using scipy.linalg.eigh(K, M)
+solved in 595.4858236312866 s
+Best mac match (fast solver) : 0.5197792932113491
+Iteration : 1, Variation : 0.30000000000000004, EigenVal : 255.6228368090598
+Best mac match (fast solver) : 0.10823339822736645
+Iteration : 2, Variation : 0.30000000000000004, EigenVal : 76.97182828851973
+Best mac match (fast solver) : 0.10992414718879195
+Iteration : 3, Variation : 0.30000000000000004, EigenVal : 224400.4256008785
+Best mac match (fast solver) : 0.10124246198639876
+Iteration : 4, Variation : 0.30000000000000004, EigenVal : 77.95921714915757
+Best mac match (fast solver) : 0.10322171257147762
+Iteration : 5, Variation : 0.30000000000000004, EigenVal : 77.72648657577973
+Best mac match (fast solver) : 0.1187203077646962
+Iteration : 6, Variation : 0.2712986115590251, EigenVal : 226.373543479923
+Best mac match (fast solver) : 0.10187943799459168
+Iteration : 7, Variation : 0.30000000000000004, EigenVal : 77.90254064107592
+Best mac match (fast solver) : 0.18227606518934156
+Iteration : 8, Variation : 0.19179611834184462, EigenVal : 220.27742877375155
+Best mac match (fast solver) : 0.15630136823811688
+Iteration : 9, Variation : 0.1678440447001187, EigenVal : 222.88459608804806
+Best mac match (fast solver) : 0.13209741719359566
+Iteration : 10, Variation : 0.1501431217028456, EigenVal : 225.16095098567826
+Best mac match (fast solver) : 0.11036880307002236
+Iteration : 11, Variation : 0.17486994590896565, EigenVal : 227.0634478121045
+Best mac match (fast solver) : 0.1022765653165295
+Iteration : 12, Variation : 0.30000000000000004, EigenVal : 77.88670376710074
+Best mac match (fast solver) : 0.17834435653328365
+Iteration : 13, Variation : 0.16576262676685316, EigenVal : 221.13310452314778
+Best mac match (fast solver) : 0.14907771842451134
+Iteration : 14, Variation : 0.23656465742506994, EigenVal : 223.72899362898937
+Best mac match (fast solver) : 0.12641791483566114
+Iteration : 15, Variation : 0.30000000000000004, EigenVal : 225.66555138887583
+Best mac match (fast solver) : 0.10961054681925768
+Iteration : 16, Variation : 0.2759067202991178, EigenVal : 227.05317033799528
+Best mac match (fast solver) : 0.10267113804091388
+Iteration : 17, Variation : 0.30000000000000004, EigenVal : 77.86648652642909
+Best mac match (fast solver) : 0.1821470104373188
+Iteration : 18, Variation : 0.30000000000000004, EigenVal : 221.17502442620062
+Best mac match (fast solver) : 0.15212635053849297
+Iteration : 19, Variation : 0.2753847948053364, EigenVal : 223.6444286495599
+Best mac match (fast solver) : 0.13356340820282697
+Iteration : 20, Variation : 0.23076354823411716, EigenVal : 225.1421347382369
+Successful solve for mode T12
