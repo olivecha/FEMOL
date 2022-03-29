@@ -495,3 +495,29 @@ def interpolate_vector(old_vector, old_mesh, new_mesh, N_dof=6):
         vi[np.isnan(vi_linear)] = vi_near[np.isnan(vi_linear)]
         new_vector[i::N_dof] = vi
     return new_vector
+
+
+def analyse_mesh(meshfile, eigvalfile=None, mode=None):
+    # Load the data
+    mesh = FEMOL.mesh.load_vtk(meshfile)
+    if eigvalfile is not None:
+        eigvals = np.load(eigvalfile)
+    else:
+        eigvals = np.ones(len(mesh.cell_data.keys()))
+    if mode is None:
+        mode = '??'
+    # Plot the moda of vibration
+    fig, ax = plt.subplots()
+    plt.sca(ax)
+    mesh.plot.point_data('m1_Uz')
+    ax.set_title(f'Mode of vibration {mode}')
+    # Plot the optimization results
+    fig, axs = plt.subplots(5, 4, figsize=(16, 20))
+    for key, eig, ax in zip(mesh.cell_data.keys(), eigvals, axs.flatten()):
+        plt.sca(ax)
+        mesh.cell_to_point_data(key)
+        mesh.plot.point_data(key, cmap='Greys')
+        FEMOL.utils.guitar_outline2(L=1)
+        title = f'TOM results {key} eigfreq {int(np.round(eig))} Hz'
+        ax.set_title(title)
+

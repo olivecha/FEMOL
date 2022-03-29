@@ -254,7 +254,7 @@ class Mesh(object):
 
         cellkeys = ['triangle', 'quad', 'T6']
         # Only keep the cell having data
-        cells = {celltype:self.cells[cell_type] for celltype in self.cells if celltype in cellkeys}
+        cells = {celltype: self.cells[cell_type] for celltype in self.cells if celltype in cellkeys}
 
         meshio_mesh = meshio.Mesh(
             self.points,
@@ -1029,6 +1029,119 @@ def guitar(L=1, lcar=0.05, option='quad', algorithm=1):
 
     FEMOL_mesh = FEMOL.Mesh(mesh.points, mesh.cells_dict)
     return FEMOL_mesh
+
+
+def guitar_sym(L=1, lcar=0.05, option='quad', algorithm=1):
+    """
+    Function returning a symmteric guitar mesh
+    :param L: overal length
+    :param lcar: characteristic length
+    :param option: 'quad' or 'triangle' for the cell elements
+    :param algorithm: if option='quad' sets the recombination algorithm used
+    :return: FEMOL.mesh.Mesh object
+    """
+    with pygmsh.geo.Geometry() as geom:
+        # Points on the boundary
+        p0 = (0, 0.38 * L)
+        p2 = (0.25 * L, 0.76 * L)
+        p5 = (0.8175 * L, 0.09 * L)
+        p7 = (1 * L, 0.38 * L)
+        # Ellipse 1
+        elc1 = (0.25 * L, 0.38 * L)
+        elh1 = 0.76 * L
+        # Ellipse 2
+        elc2 = (0.8175 * L, 0.38 * L)
+        elh2 = 0.58 * L
+
+        # Left top ellipse
+        elsa1 = geom.add_point(p0, lcar)
+        elce1 = geom.add_point(elc1, lcar)
+        pt = (elc1[0], elc1[1] + elh1 / 2)
+        elax1 = geom.add_point(pt, lcar)
+        elso1 = geom.add_point(p2, lcar)
+        ell1 = geom.add_ellipse_arc(elsa1, elce1, elax1, elso1)
+
+        # Top guitar side 1
+        p1 = FEMOL.domains.create_polynomial(0.25 * L, 0.76 * L, 0.625 * L, (0.71225 - 0.1645 / 2) * L, 0)
+        x1 = np.linspace(0.25 * L, 0.625 * L, 10)
+        y1 = p1[0] * x1 ** 3 + p1[1] * x1 ** 2 + p1[2] * x1 + p1[3]
+        points = [(xi, yi) for xi, yi in zip(x1, y1)]
+        spli1_points = [elso1]
+        for pt in points[1:]:
+            spli1_points.append(geom.add_point(pt, lcar))
+        spli1 = geom.add_spline(spli1_points)
+
+        # Top guitar side 2
+        p2 = FEMOL.domains.create_polynomial(0.625 * L, (0.71225 - 0.1645 / 2) * L, 0.8175 * L, 0.67 * L, 0)
+        x2 = np.linspace(0.625 * L, 0.8175 * L, 10)
+        y2 = p2[0] * x2 ** 3 + p2[1] * x2 ** 2 + p2[2] * x2 + p2[3]
+        points = [(xi, yi) for xi, yi in zip(x2, y2)]
+        spli2_points = [spli1_points[-1]]
+        for pt in points[1:]:
+            spli2_points.append(geom.add_point(pt, lcar))
+        spli2 = geom.add_spline(spli2_points)
+
+        # Right top ellipse
+        elce2 = geom.add_point(elc2, lcar)
+        pt = (elc2[0], elc2[1] + elh2 / 2)
+        elax2 = geom.add_point(pt, lcar)
+        elso2 = geom.add_point(p7, lcar)
+        ell2 = geom.add_ellipse_arc(spli2_points[-1], elce2, elax2, elso2)
+
+        # Top to sound hole spline
+        ce = [0.673 * L, 0.38 * L]
+        r = 0.175 * L / 2
+        hosa = geom.add_point((ce[0] + r, ce[1]), lcar)
+        spli3 = geom.add_spline([elso2, hosa])
+
+        # Sound hole arc
+        hoce = geom.add_point(ce, lcar)
+        hoso = geom.add_point((ce[0] - r, ce[1]), lcar)
+        circ1 = geom.add_circle_arc(hosa, hoce, hoso)
+
+        # Sound hole to bottom
+        spli4 = geom.add_spline([hoso, elsa1])
+
+        # Guitar outline curve loop
+        loop1 = geom.add_curve_loop([ell1, spli1, spli2, ell2, spli3, circ1, spli4])
+
+        # Soundhole
+        # hole = geom.add_circle([0.673 * L, 0.38 * L], 0.175 * L / 2, lcar, make_surface=False)
+        # loop2 = geom.add_curve_loop(hole.curve_loop.curves)
+        # , [loop2]
+        s1 = geom.add_plane_surface(loop1)
+
+        if option == 'quad':
+            geom.set_recombined_surfaces([s1])
+        elif option == 'triangle':
+            pass
+        mesh = geom.generate_mesh(algorithm=algorithm)
+
+    FEMOL_mesh = FEMOL.Mesh(mesh.points, mesh.cells_dict)
+
+    # Add the symmetric points on the other side of the line
+    line_nodes = np.arange(FEMOL_mesh.points.shape[0])[FEMOL_mesh.points[:, 1] < (0.38 * L + 0.00001)]
+    free_nodes = np.arange(FEMOL_mesh.points.shape[0])[FEMOL_mesh.points[:, 1] > (0.38 * L + 0.00001)]
+    # Create symmetry for free nodes
+    pts_copy = FEMOL_mesh.points[free_nodes, :].copy()
+    pts_copy[:, 1] = -pts_copy[:, 1] + 2*(0.38*L)
+    all_pts = np.vstack([FEMOL_mesh.points, pts_copy])
+    new_nodes = np.arange(FEMOL_mesh.points.shape[0], FEMOL_mesh.points.shape[0] + pts_copy.shape[0])
+    # Create a mapping array
+    old_new_map = np.empty(free_nodes.max()+1, dtype=int)
+    old_new_map[free_nodes] = new_nodes
+
+    # Copy the cells and map them to the new nodes
+    all_cells = {}
+    for cell_type in FEMOL_mesh.contains:
+        cell_copy = FEMOL_mesh.cells[cell_type].copy()
+        for i, cell in enumerate(cell_copy):
+            cell[[n in free_nodes for n in cell]] = old_new_map[cell[[n in free_nodes for n in cell]]]
+            cell_copy[i, :] = cell
+        all_cells[cell_type] = np.vstack([FEMOL_mesh.cells[cell_type], cell_copy])
+
+    mesh = FEMOL.mesh.Mesh(all_pts, all_cells)
+    return mesh
 
 
 def prism_mesh(a, b, h):

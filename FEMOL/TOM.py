@@ -404,10 +404,11 @@ class SIMP_VIBE(object):
         self.loop = 0
 
     def solve(self, v_ref,  converge=0.01, min_iter=1, max_iter=100, plot=True,
-              save=True, verbose=True, convergence_criteria='change', sigma=0):
+              save=True, verbose=True, convergence_criteria='change', mesh_filename=None, eigvals_filename=None):
         """
                SIMP Optimization solver
-               :param logfile:
+               :param eigvals_filename:
+               :param mesh_filename:
                :param convergence_criteria:
                :param verbose:
                :param converge: Convergence for density
@@ -422,6 +423,14 @@ class SIMP_VIBE(object):
         self.loop = 0
         solved = False
         TOM_start_time = FEMOL.utils.unique_time_string()
+        if mesh_filename is None:
+            mesh_filename = 'Results/_topopt_cache/TOM_' + TOM_start_time
+        else:
+            mesh_filename = 'Results/_topopt_cache/' + mesh_filename
+        if eigvals_filename is None:
+            eigvals_filename = 'Results/_topopt_cache/eigvals_' + TOM_start_time
+        else:
+            eigvals_filename = 'Results/_topopt_cache/' + eigvals_filename
 
         while not solved:
             # Iterate
@@ -475,10 +484,10 @@ class SIMP_VIBE(object):
                 # Add the core height transformation
                 self.mesh = self.density_to_core_height()
                 # Add the penalized density values
-                self.mesh.cell_data['X_real'] = {'quad': self.mesh.cell_data['X']['quad'] ** 3}
+                self.mesh.cell_data['X_real'] = {'quad': self.mesh.cell_data['X']['quad'] ** self.p}
                 # save for the current iteration
-                self._save_TOM_result(TOM_start_time)
-                np.save('Results/_topopt_cache/eigvals_'+TOM_start_time, np.array(self.all_lmbds))
+                self.mesh.save(mesh_filename)
+                np.save(eigvals_filename, np.array(self.all_lmbds))
 
         return self.mesh
 
@@ -499,16 +508,6 @@ class SIMP_VIBE(object):
         title = "Iteration : " + str(self.loop) + ', variation : ' + str(np.around(self.change * 100, 1))
         ax.set_title(title)
         plt.pause(0.1)
-
-    def _save_TOM_result(self, timestring):
-        # Try saving the file in results
-        try:
-            filename = 'Results/_topopt_cache/TOM_' + timestring
-            self.mesh.save(filename)
-        # If it does not work save it here
-        except FileNotFoundError:
-            filename = 'TOM_' + timestring
-            self.mesh.save(filename)
 
     def _get_new_x(self, X):
         l1 = 0
