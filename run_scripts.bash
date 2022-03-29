@@ -4,5 +4,5 @@
 for py in $(ls guitar*.py);
 do
 	log=${py%.*}.txt
-	python -u $py >>  $log&
+	python3 -u $py >>  $log&
 done 
