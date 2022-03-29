@@ -2,7 +2,7 @@ import os
 import FEMOL.utils
 
 # current variables
-LCAR = 0.03
+LCAR = 0.05
 MAXITER = 20
 CONVERGENCE = 0.03
 VOLFRAC = 0.27
@@ -42,7 +42,8 @@ def make_GuitarSimpVibe_log(mode='', lcar=LCAR, plies_carbon=None):
     return filename
 
 
-modes = ['T11', 'T21', 'T12', 'T31']
-for mode in modes:
-    for plies in [[0, 90], [90, 90], [45, -45]]:
-        script, log = make_GuitarSimpVibe_script(mode=mode, plies_carbon=plies)
+make_GuitarSimpVibe_script(mode='T11')
+#modes = ['T11', 'T21', 'T12', 'T31']
+#for mode in modes:
+#    for plies in [[0, 90], [90, 90], [45, -45]]:
+#        script, log = make_GuitarSimpVibe_script(mode=mode, plies_carbon=plies)

@@ -12,7 +12,6 @@ import matplotlib.pyplot as plt
 # Ipython
 from IPython.display import clear_output
 # Python
-import sys
 import time
 
 __all__ = ['SIMP_COMP', 'SIMP_VIBE']
@@ -85,9 +84,7 @@ class SIMP_COMP(object):
             if plot:
                 self._plot_iteration()
             else:
-                info = f"Iteration : {self.loop}, " \
-                       f"variation: {np.around(self.change * 100, 1)}," \
-                       f" objective : {np.abs(np.around(self.c, 3))}"
+                info = f"Iteration : {self.loop}, variation: {self.change}, objective : {self.c}"
                 print(info)
 
             if save:
@@ -465,9 +462,7 @@ class SIMP_VIBE(object):
             if plot:
                 self._plot_iteration()
             if verbose:
-                info = 'Iteration : {it}, Variation : {va}, EigenVal : {eg}'.format(it=self.loop,
-                                                                                    va=self.change,
-                                                                                    eg=self.lmbd)
+                info = f'Iteration : {self.loop}, Variation : {self.change}, EigenVal : {self.lmbd}'
                 print(info)
 
             if convergence_criteria == 'change':
