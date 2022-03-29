@@ -1,0 +1,6 @@
+______ Run parameters ______
+Mesh characteristic length : 0.03 
+Max number of iterations : 20 
+Convergence criterion : 3.0 % 
+Target volume fraction : 27.0 % 
+Carbon layup plies : [45, -45] % 
