@@ -482,7 +482,7 @@ class SIMP_VIBE(object):
                 self.mesh.cell_data['X_real'] = {'quad': self.mesh.cell_data['X']['quad'] ** self.p}
                 # save for the current iteration
                 self.mesh.save(mesh_filename)
-                np.save(eigvals_filename, np.array(self.all_lmbds))
+                np.save(eigvals_filename, np.array(self.lmbds))
 
         return self.mesh
 

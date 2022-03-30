@@ -42,7 +42,7 @@ def make_GuitarSimpVibe_log(mode='', lcar=LCAR, plies_carbon=None):
     return filename
 
 
-modes = ['T11', 'T21', 'T12', 'T31']
+modes = ['T11', 'T21', 'T31']
 for mode in modes:
     for plies in [[0, 90], [90, 90], [45, -45]]:
         script, log = make_GuitarSimpVibe_script(mode=mode, plies_carbon=plies)
