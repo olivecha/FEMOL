@@ -1,4 +1,5 @@
 from FEMOL.TOM import *
+from FEMOL.TOM_SIMP import *
 from FEMOL.FEM import *
 from . import materials
 from . import utils

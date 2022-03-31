@@ -53,8 +53,7 @@ class GuitarSimpVibe(object):
         print(f'solving SIMP problem for mode {self.mode} ' + FEMOL.utils.unique_time_string())
         self.SIMP = FEMOL.SIMP_VIBE(Problem=self.problem,
                                     volfrac=self.volfrac,
-                                    objective='max eig',
-                                    FEM_solver_type='fast',
+                                    FEM_solver_type='guitar',
                                     p=self.p,
                                     q=self.q)
         self.SIMP.void_domain = FEMOL.domains.inside_box([[0.57, 1]], [[0, 1]])

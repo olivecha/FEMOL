@@ -678,7 +678,7 @@ class MeshPlot(object):
                     y = cell_points.T[1]
                     ax.fill(x, y, color, edgecolor='k', zorder=-1)
 
-    def point_data(self, which, wrapped=True, cmap=None):
+    def point_data(self, which, wrapped=True, cmap=None, **kwargs):
         """
         Plots the displacement colormap on the wrapped mesh
         """
@@ -691,10 +691,10 @@ class MeshPlot(object):
                 triangulation = tri.Triangulation(*self.mesh.points.T[:2], self.all_tris)
             ax = plt.gca()
             ax.set_title('{which} point data'.format(which=which))
-            ax.tricontourf(triangulation, self.mesh.point_data[which], cmap=cmap)
+            ax.tricontourf(triangulation, self.mesh.point_data[which], cmap=cmap, **kwargs)
 
         except AttributeError:
-            self.point_data(which, wrapped=False, cmap=cmap)
+            self.point_data(which, wrapped=False, cmap=cmap, **kwargs)
 
     def cell_data(self, which, cmap='Greys'):
         """
@@ -1028,6 +1028,8 @@ def guitar(L=1, lcar=0.05, option='quad', algorithm=1):
         mesh = geom.generate_mesh(algorithm=algorithm)
 
     FEMOL_mesh = FEMOL.Mesh(mesh.points, mesh.cells_dict)
+    FEMOL_mesh.lcar = lcar
+    FEMOL_mesh.sym = False
     return FEMOL_mesh
 
 
@@ -1141,6 +1143,8 @@ def guitar_sym(L=1, lcar=0.05, option='quad', algorithm=1):
         all_cells[cell_type] = np.vstack([FEMOL_mesh.cells[cell_type], cell_copy])
 
     mesh = FEMOL.mesh.Mesh(all_pts, all_cells)
+    mesh.lcar = lcar
+    mesh.sym = True
     return mesh
 
 

@@ -1,9 +1,8 @@
-import os
 import FEMOL.utils
 
 # current variables
 LCAR = 0.03
-MAXITER = 20
+MAXITER = 25
 CONVERGENCE = 0.03
 VOLFRAC = 0.27
 PENALITY = 1
@@ -16,12 +15,14 @@ def make_GuitarSimpVibe_script(mode='', lcar=LCAR, max_iter=MAXITER, conv=CONVER
     filename = f'guitar_lcar{str(lcar)[-2:]}_{mode}_{plies_carbon[0]}_{plies_carbon[1]}.py'
     meshfile = f'TOM_lcar{str(lcar)[-2:]}_{mode}_{plies_carbon[0]}_{plies_carbon[1]}'
     eigvalfile = f'eigvals_lcar{str(lcar)[-2:]}_{mode}_{plies_carbon[0]}_{plies_carbon[1]}'
+    eigvecsfile = f'eigvecs_lcar{str(lcar)[-2:]}_{mode}_{plies_carbon[0]}_{plies_carbon[1]}'
     f = open(filename, 'w')
     f.write('from FEMOL.problems import GuitarSimpVibe \n')
     f.write(
         f"problem = GuitarSimpVibe(mode='{mode}', mesh_lcar={lcar}, volfrac={volfrac}, p={p}, plies_carbon={plies_carbon}) \n")
     f.write(
-        f'problem.solve(max_iter={max_iter}, converge={conv}, mesh_filename ="{meshfile}", eigvals_filename="{eigvalfile}") \n')
+        f'problem.solve(max_iter={max_iter}, converge={conv}, mesh_filename ="{meshfile}", '
+        f'eigvals_filename="{eigvalfile}", eigvecs_filename="{eigvecsfile}") \n')
     f.close()
     logfile = make_GuitarSimpVibe_log(mode=mode, lcar=lcar, plies_carbon=plies_carbon)
     return filename, logfile
@@ -42,7 +43,7 @@ def make_GuitarSimpVibe_log(mode='', lcar=LCAR, plies_carbon=None):
     return filename
 
 
-modes = ['T11', 'T21', 'T31']
+modes = ['T11', 'T21', 'T12', 'T31']
 for mode in modes:
     for plies in [[0, 90], [90, 90], [45, -45]]:
         script, log = make_GuitarSimpVibe_script(mode=mode, plies_carbon=plies)
