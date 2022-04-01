@@ -1,0 +1,32 @@
+______ Run parameters ______
+Mesh characteristic length : 0.03 
+Max number of iterations : 25 
+Convergence criterion : 3.0 % 
+Target volume fraction : 27.0 % 
+Carbon layup plies : [0, 90] % 
+solving SIMP problem for mode T12 2022-03-31_18_23_41
+Solving using scipy.linalg.eigh(K, M)
+solved in 873.6352598667145 s
+Best mac match (fast solver) : 0.9802098821952648
+Iteration : 1, Variation : 0.30000000000000004, EigenVal : 254.97877692758564
+Best mac match (fast solver) : 0.4056672252544056
+Iteration : 2, Variation : 0.30000000000000004, EigenVal : 77.83487457056172
+Best mac match (fast solver) : 0.3896258508842361
+Iteration : 3, Variation : 0.30000000000000004, EigenVal : 78.484246114177
+Best mac match (fast solver) : 0.3863014333205208
+Iteration : 4, Variation : 0.22996393673689763, EigenVal : 78.68287867963228
+Best mac match (fast solver) : 0.38719485985102853
+Iteration : 5, Variation : 0.15179188408559774, EigenVal : 78.68556855528585
+Best mac match (fast solver) : 0.38811540924714927
+Iteration : 6, Variation : 0.1067958905405807, EigenVal : 78.68109913345066
+Best mac match (fast solver) : 0.3889958772272169
+Iteration : 7, Variation : 0.0714472654185232, EigenVal : 78.67596476006186
+Best mac match (fast solver) : 0.389735551154469
+Iteration : 8, Variation : 0.05219514076849496, EigenVal : 78.67148229001194
+Best mac match (fast solver) : 0.39032494307345805
+Iteration : 9, Variation : 0.041581579142381475, EigenVal : 78.66786499017108
+Best mac match (fast solver) : 0.3907675905680546
+Iteration : 10, Variation : 0.03097247946137216, EigenVal : 78.66517204585192
+Best mac match (fast solver) : 0.39109475015498774
+Iteration : 11, Variation : 0.026623161244361704, EigenVal : 78.66321493923438
+Successful solve for mode T12
