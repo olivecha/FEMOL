@@ -131,9 +131,7 @@ def outside_ellipse(center, start, stop, eps=1e-3):
 
     # Ellipse domain function
     def domain(x, y):
-
         Ri = (x - h) ** 2 / (a - eps) ** 2 + (y - k) ** 2 / (b - eps) ** 2
-
         if Ri < 1:
             return False
         else:
@@ -153,8 +151,8 @@ def outside_guitar(L):
 
     # Right ellipse
     elc2 = (0.8175 * L, 0.38 * L)
-    elsa2 = (0.8175 * L, 0.09)
-    elso2 = (1, 0.38 * L)
+    elsa2 = (0.8175 * L, 0.09*L)
+    elso2 = (1*L, 0.38 * L)
     ellipse2 = outside_ellipse(elc2, elsa2, elso2)
 
     # Top and bottom curves
@@ -249,3 +247,8 @@ def guitar_domain(Lx, Ly):
             return False
 
     return fixed_guitar
+
+
+def top_brace(L=1):
+    domain = inside_box([[0.8175 * L - (L/30), 0.8175 * L + (L/20)]], [[0, L]])
+    return domain

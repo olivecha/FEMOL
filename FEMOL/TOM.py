@@ -152,16 +152,6 @@ class SIMP_VIBE(object):
         else:
             np.save(eig_file, np.array(self.lmbds))
 
-    def save_guitar_modes(self, vecfile, eigfile):
-        """
-        Function saving the guitar modes from the modal solve result
-        :param eigfile: file base name for eigenfrequencies
-        :param vecfile: file base name for eigenvectors
-        :return: None
-        """
-        np.save(self.save_root + vecfile, np.array(self.guit_vecs))
-        np.save(self.save_root + eigfile, np.array(self.guit_freqs))
-
     def check_convergence(self, converge, min_iter, max_iter, convergence_criteria):
         """
         Method to check the convergence for the current iteration

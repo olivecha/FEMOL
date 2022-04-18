@@ -134,9 +134,6 @@ class OrthotropicMaterial(object):
                          [0, Gyz]])
 
 
-
-
-
 class IsotropicMaterial(object):
 
     def __init__(self, E, mu, rho):

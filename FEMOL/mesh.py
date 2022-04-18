@@ -575,7 +575,7 @@ class Mesh(object):
             else:
                 # if there is only a base
                 z_top = hb * self.point_data[which]
-                z_bot = np.ones((self.points.shape[0])) * self.point_data[which].min()
+                z_bot = np.zeros(self.points.shape[0])
 
             # points at the top
             points1[:, 2] = z_top
@@ -616,7 +616,6 @@ class Mesh(object):
 
         tris = np.vstack([tris1, tris2, tris3])
         cells = [('triangle', tris)]
-        points *= scale
         meshio_mesh = meshio.Mesh(points, cells)
         meshio_mesh.write(filename + '.stl')
 
@@ -1054,7 +1053,6 @@ def guitar_sym(L=1, lcar=0.05, option='quad', algorithm=1):
         # Ellipse 2
         elc2 = (0.8175 * L, 0.38 * L)
         elh2 = 0.58 * L
-
         # Left top ellipse
         elsa1 = geom.add_point(p0, lcar)
         elce1 = geom.add_point(elc1, lcar)

@@ -192,17 +192,20 @@ class FEM_Problem(object):
         :return: FEM Result class associated to the Problem kind
         """
         if self.physics == 'displacement':
-            return self._displacement_solve(verbose=verbose)
+            return self._displacement_solve(verbose=verbose, solve_from_zc=solve_from_zc, h_min=h_min)
 
         elif self.physics == 'modal':
             return self._modal_solve(verbose=verbose, solve_from_zc=solve_from_zc, filtre=filtre, h_min=h_min,
                                      modal_solver=modal_solver, sigma=sigma)
 
-    def _displacement_solve(self, verbose):
+    def _displacement_solve(self, verbose, solve_from_zc=False, h_min=0):
         """ General displacement solving function to allow multiple handling linear solvers"""
         # Assemble if not assembled
         if not hasattr(self, 'K'):
-            self.assemble('K')
+            if not solve_from_zc:
+                self.assemble('K')
+            else:
+                self._assemble_K(user_data=self._K_variable_core_laminate_data(h_min=h_min))
         # Solve with scipy
         U = self._scipy_displacement_solve(verbose=verbose)
         # add the solution to the mesh

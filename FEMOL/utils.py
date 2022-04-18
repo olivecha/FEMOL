@@ -4,7 +4,7 @@ import os
 import matplotlib.pyplot as plt
 from matplotlib import animation
 import datetime
-from scipy.interpolate import griddata
+from scipy.interpolate import griddata, interp1d
 
 """
 Plot/Validation functions
@@ -196,13 +196,13 @@ def guitar_outline2(L):
     y = p[0] * x ** 3 + p[1] * x ** 2 + p[2] * x + p[3]
     ax.plot(x, y, color='k')
     # Top 2
-    p = FEMOL.domains.create_polynomial(0.625 * L, 0.71225 - 0.1645 / 2, 0.8175 * L, 0.67, 0)
-    x = np.linspace(0.625, 0.8175, 100)
+    p = FEMOL.domains.create_polynomial(0.625 * L, 0.71225*L - 0.1645*L / 2, 0.8175 * L, 0.67*L, 0)
+    x = np.linspace(0.625*L, 0.8175*L, 100)
     y = p[0] * x ** 3 + p[1] * x ** 2 + p[2] * x + p[3]
     ax.plot(x, y, color='k')
     # Bot 1
-    p = FEMOL.domains.create_polynomial(0.625 * L, 0.04775 + 0.1645 / 2, 0.8175 * L, 0.09, 0)
-    x = np.linspace(0.625, 0.8175, 100)
+    p = FEMOL.domains.create_polynomial(0.625 * L, 0.04775*L + 0.1645*L / 2, 0.8175 * L, 0.09*L, 0)
+    x = np.linspace(0.625*L, 0.8175*L, 100)
     y = p[0] * x ** 3 + p[1] * x ** 2 + p[2] * x + p[3]
     ax.plot(x, y, color='k')
     # Bot 2
@@ -497,6 +497,17 @@ def interpolate_vector(old_vector, old_mesh, new_mesh, N_dof=6):
     return new_vector
 
 
+def interpolate_point_data(old_data, old_mesh, new_mesh):
+    """ interpolate point data onto a new mesh"""
+    # Interpolate at the new mesh points
+    data_linear = griddata(old_mesh.points[:, :2], old_data, new_mesh.points[:, :2], method='linear')
+    data_near = griddata(old_mesh.points[:, :2], old_data, new_mesh.points[:, :2], method='nearest')
+    new_data = data_linear
+    # Use the nearest value where the linear value is NaN (boundary)
+    new_data[np.isnan(data_linear)] = data_near[np.isnan(data_linear)]
+    return new_data
+
+
 def analyse_mesh(meshfile, eigvalfile=None, mode=None):
     # Load the data
     mesh = FEMOL.mesh.load_vtk(meshfile)
@@ -520,4 +531,106 @@ def analyse_mesh(meshfile, eigvalfile=None, mode=None):
         FEMOL.utils.guitar_outline2(L=1)
         title = f'TOM results {key} eigfreq {int(np.round(eig))} Hz'
         ax.set_title(title)
+
+
+def plot_soundboard_deflexion(mesh):
+    """ Function to plot the soundboard deflexion analysis"""
+
+    def align_yaxis_np(ax1, ax2):
+        """Align zeros of the two axes, zooming them out by same ratio"""
+        axes = np.array([ax1, ax2])
+        extrema = np.array([ax.get_ylim() for ax in axes])
+        tops = extrema[:, 1] / (extrema[:, 1] - extrema[:, 0])
+        # Ensure that plots (intervals) are ordered bottom to top:
+        if tops[0] > tops[1]:
+            axes, extrema, tops = [a[::-1] for a in (axes, extrema, tops)]
+
+        # How much would the plot overflow if we kept current zoom levels?
+        tot_span = tops[1] + 1 - tops[0]
+
+        extrema[0, 1] = extrema[0, 0] + tot_span * (extrema[0, 1] - extrema[0, 0])
+        extrema[1, 0] = extrema[1, 1] + tot_span * (extrema[1, 0] - extrema[1, 1])
+        [axes[i].set_ylim(*extrema[i]) for i in range(2)]
+
+    x_points = mesh.points[np.isclose(mesh.points[:, 1], (0.76 / 2)), 0]
+    idxs = np.argsort(x_points)
+    displacement = mesh.point_data['Uz'][np.isclose(mesh.points[:, 1], (0.76 / 2))][idxs]
+    x_points = x_points[idxs]
+
+    f = interp1d(x_points, displacement, kind='quadratic')
+    x1 = np.linspace(0, 0.6)
+    x2 = np.linspace(0.78, 1)
+    T1 = -np.degrees(np.arctan2(f(x1)[1:] - f(x1)[:-1], x1[1:] - x1[:-1]))
+    T2 = -np.degrees(np.arctan2(f(x2)[1:] - f(x2)[:-1], x2[1:] - x2[:-1]))
+    T_max = np.max(np.abs(np.hstack([T1, T2])))
+
+    fig, ax1 = plt.subplots()
+    ax1.plot(x1, f(x1) * 1000, color='#743F0B', label='deflexion')
+    ax1.plot(x2, f(x2) * 1000, color='#743F0B')
+    ax1.plot([0, 1], [0, 0], '--', color='0.6')
+    ax1.set_ylim(-2, 5)
+    ax1.plot([], [], linestyle='--', color='k', label='angle')
+    ax1.set_xlabel('normalized distance across soundboard')
+
+    ax2 = ax1.twinx()
+    ax2.plot(x1[1:], T1, linestyle='--', color='k', label='angle')
+    ax2.plot(x2[1:], T2, linestyle='--', color='k')
+
+    ax1.legend()
+    ax1.set_ylabel('Deflexion (mm)')
+    ax2.set_ylabel('Normal angle (degrees)')
+    ax1.grid('on')
+    ax1.set_xlim(0, 1)
+    align_yaxis_np(ax1, ax2)
+
+    return T_max
+
+
+def topology_info(mesh, h_min=0, scale=0.480):
+    """ Function printing the topology info from a mesh"""
+    Mf = flax_mass(mesh)
+    Vcore = core_volume(mesh, h_min=h_min)
+    Mpla = Vcore * 1.25 * 0.2
+    print(f'pla mass: {np.around(Mpla, 1)} g')
+    Mcarbon = carbon_mass(mesh, h_min=h_min)
+    print(f'ratio brace/board {np.around((Mcarbon + Mpla) / Mf, 2)}')
+
+
+def core_volume(mesh, h_min=0.002, scale=0.480):
+    """ Function computing the volume of a core of a topology result"""
+    h = mesh.cell_data['zc']['quad']
+    h[h < h_min] = 0
+    A = mesh.element_areas()['quad'] * (scale ** 2)
+    print(f'core volume: {np.around(np.sum(h * A) * (100 ** 3), 2)} cm^3')
+    return np.sum(h * A) * (100 ** 3)
+
+
+def flax_mass(mesh, t=0.0025, scale=0.480):
+    """ Function computing the flax mass of a board from a mesh"""
+    A = mesh.element_areas()['quad'] * (scale ** 2)
+    flax = FEMOL.materials.general_flax()
+    V = np.sum(A * t)  # m3
+    M = V * flax.rho
+    return 1000 * M
+
+
+def carbon_mass(mesh, t=0.00025, h_min=0, scale=0.480):
+    """ Fonction computing the carbon mass from a topology result"""
+    A = mesh.element_areas()['quad'] * (scale ** 2)
+    h = mesh.cell_data['zc']['quad']
+    flax = FEMOL.materials.general_carbon()
+    V = np.sum(A[h > h_min] * t)  # m3
+    M = V * flax.rho
+    M *= 1000
+    print(f'carbon mass: {np.around(M, 1)} g')
+    return M
+
+
+def add_top_brace_to_zc(mesh, zc, hc):
+    """ Add a top brace to the core height cell data of a mesh"""
+    domain = FEMOL.domains.top_brace(L=1)
+    for i, element in enumerate(mesh.cells[mesh.contains[0]]):
+        if np.array([domain(*coord[:2]) for coord in mesh.points[element]]).all():
+            zc[mesh.contains[0]][i] = hc
+    return zc
 

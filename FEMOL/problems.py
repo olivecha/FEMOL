@@ -2,6 +2,59 @@ import FEMOL
 import numpy as np
 
 
+class GuitarDeflexion(object):
+
+    # materials
+    n_plies_carbon = 2
+    n_plies_flax = 9
+    plies_flax = [0, 0, 0, 0, 0, 0, 0, 0, 0]
+    flax = FEMOL.materials.general_flax()  # material from library
+    carbon = FEMOL.materials.general_carbon()
+
+    def __init__(self, lcar=0.03,
+                 h_flax=0.0025, h_carbon=0.0002, hc_opt=0.010,
+                 plies_carbon=None, factor=0.480, core_data_file=None):
+
+        # mesh
+        self.mesh = FEMOL.mesh.guitar_sym(L=1, lcar=lcar)
+        self.factor = factor
+        self.core_file = core_data_file
+
+        # Ply thickness
+        self.flax.hi = h_flax / self.n_plies_flax
+        self.carbon.hi = h_carbon / self.n_plies_carbon
+        # layups
+        h = hc_opt + h_flax + h_carbon
+        if plies_carbon is None:
+            plies_carbon = [0, 90]
+        z_flax = -h / 2 + (self.n_plies_flax / 2) * self.flax.hi
+        self.flax_layup = FEMOL.laminate.Layup(material=self.flax, plies=self.plies_flax, symetric=False, z_core=z_flax)
+        z_carbon = h / 2 - (self.n_plies_carbon / 2) * self.carbon.hi
+        self.carbon_layup = FEMOL.laminate.Layup(material=self.carbon, plies=plies_carbon, symetric=False, z_core=z_carbon)
+
+    def construct_FEM_problem(self):
+
+        # Create a FEM Problem from the mesh (compute displacement with a plate bending model)
+        problem = FEMOL.FEM_Problem(mesh=self.mesh, physics='displacement', model='plate')
+
+        problem.add_fixed_domain(FEMOL.domains.outside_guitar(L=1))
+        problem.define_materials(self.flax, self.carbon)
+        problem.define_tensors(self.flax_layup, self.carbon_layup)
+        x_values = [0.135 / self.factor, 0.165 / self.factor]
+        y_values = [0.095 / self.factor, 0.265 / self.factor]
+        bridge = FEMOL.domains.inside_box([x_values], [y_values])
+        # string tension
+        problem.add_forces([0, 0, 0, -21, 0, 0], bridge)
+        zc_mesh = FEMOL.mesh.load_vtk(self.core_file)
+        zc_mesh.cell_data['zc'] = FEMOL.utils.add_top_brace_to_zc(zc_mesh, zc_mesh.cell_data['zc'], 0.010)
+        problem.mesh.cell_data['zc'] = zc_mesh.cell_data['zc']
+        return problem
+
+    def solve(self, h_min=0):
+        problem = self.construct_FEM_problem()
+        return problem.solve(solve_from_zc=True, h_min=h_min)
+
+
 class GuitarSimpVibe(object):
     """ Class containing a guitar Topology optimization problem"""
     # problem data
@@ -67,42 +120,39 @@ class GuitarSimpVibe(object):
 
 class GuitarModal(object):
     """ Class representing a guitar modal analysis problem"""
-    hc_opt = 0.010  # optimized core thickness
-    h_flax = 0.003
-    h_carbon = 0.000250
     n_plies_carbon = 2
     n_plies_flax = 9
-
-    # flax material definition
-    flax = FEMOL.materials.general_flax()  # material from library
-    flax.hi = h_flax / n_plies_flax
     # carbon material definition
-    carbon = FEMOL.materials.general_carbon()
-    carbon.hi = h_carbon/n_plies_carbon
 
-    # Laminates definitions
-    h = hc_opt + h_flax + h_carbon
-    # Reference layups
-    plies_flax = [0, 0, 0, 0, 0, 0, 0, 0, 0]
-    flax_layup = FEMOL.laminate.Layup(material=flax, plies=plies_flax, symetric=False,
-                                      z_core=-h / 2 + (n_plies_flax / 2) * flax.hi)
-    plies_carbon = [90, 90]
-    carbon_layup = FEMOL.laminate.Layup(material=carbon, plies=plies_carbon, symetric=False,
-                                        z_core=h / 2 - (n_plies_carbon / 2) * carbon.hi)
-
-    def __init__(self, mesh_lcar=0.04):
+    def __init__(self, mesh_lcar=0.03,
+                 hc_opt=0.010, h_flax=0.003, h_carbon=0.000250,
+                 plies_flax=None, plies_carbon=None):
+        # Mesh definition
         self.mesh = FEMOL.mesh.guitar_sym(lcar=mesh_lcar)
         self.lcar = mesh_lcar
-
+        # Materials and layups
+        flax = FEMOL.materials.general_flax()  # material from library
+        flax.hi = h_flax / self.n_plies_flax
+        carbon = FEMOL.materials.general_carbon()
+        carbon.hi = h_carbon / self.n_plies_carbon
+        h = hc_opt + h_flax + h_carbon
+        if plies_flax is None:
+            plies_flax = [0, 0, 0, 0, 0, 0, 0, 0, 0]
+        if plies_carbon is None:
+            plies_carbon = [90, 90]
+        flax_layup = FEMOL.laminate.Layup(material=flax, plies=plies_flax, symetric=False,
+                                          z_core=-h / 2 + (self.n_plies_flax / 2) * flax.hi)
+        carbon_layup = FEMOL.laminate.Layup(material=carbon, plies=plies_carbon, symetric=False,
+                                            z_core=h / 2 - (self.n_plies_carbon / 2) * carbon.hi)
         # FEM problems definition
         self.problem = FEMOL.FEM_Problem(mesh=self.mesh, physics='modal', model='plate')
-        self.problem.define_materials(self.flax, self.carbon)
-        self.problem.define_tensors(self.flax_layup, self.carbon_layup)
+        self.problem.define_materials(flax, carbon)
+        self.problem.define_tensors(flax_layup, carbon_layup)
         self.problem.add_fixed_domain(FEMOL.domains.outside_guitar(L=1))
 
-    def solve(self, mac_find=True):
+    def solve(self, mac_find=True, **kwargs):
         # Solve the reference problem
-        w_opt, v_opt = self.problem.solve()
+        w_opt, v_opt = self.problem.solve(**kwargs)
         if mac_find:
             # Find guitar reference eigenfrequencies and vectors
             modes = ['T11', 'T21', 'T12', 'T31']
