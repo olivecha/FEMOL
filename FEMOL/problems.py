@@ -17,6 +17,7 @@ class GuitarDeflexion(object):
 
         # mesh
         self.mesh = FEMOL.mesh.guitar_sym(L=1, lcar=lcar)
+        self.solved_mesh = None
         self.factor = factor
         self.core_file = core_data_file
 
@@ -52,7 +53,8 @@ class GuitarDeflexion(object):
 
     def solve(self, h_min=0):
         problem = self.construct_FEM_problem()
-        return problem.solve(solve_from_zc=True, h_min=h_min)
+        self.solved_mesh = problem.solve()
+        return self.solved_mesh
 
 
 class GuitarSimpVibe(object):

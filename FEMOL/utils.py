@@ -48,11 +48,14 @@ def validate_N_fun():
         plt.title('N' + str(i + 1))
 
 
-def plot_circle(pos_x, pos_y, r):
+def plot_circle(pos_x, pos_y, r, rot=False):
     ax = plt.gca()
     theta = np.linspace(0, 2 * np.pi, 200)
     x = pos_x + r * np.cos(theta)
     y = pos_y + r * np.sin(theta)
+    if rot:
+        x, y = y, -x
+        y = -y
     ax.plot(x, y, color='k')
 
 
@@ -67,7 +70,7 @@ def plot_arc(x0, x1, pos_x, pos_y, r, side):
         ax.plot(x, y1_2, color='k')
 
 
-def plot_ellipse_arc(center, a, b, theta_start, theta_stop):
+def plot_ellipse_arc(center, a, b, theta_start, theta_stop, rot=False):
     """ Plot an ellipse arc with dimensions a, b from theta start to theta stop at center"""
     ax = plt.gca()
     a, b = a / 2, b / 2
@@ -75,6 +78,9 @@ def plot_ellipse_arc(center, a, b, theta_start, theta_stop):
     r = (a * b) / np.sqrt((b * np.cos(theta)) ** 2 + (a * np.sin(theta)) ** 2)
     x = r * np.cos(theta) + center[0]
     y = r * np.sin(theta) + center[1]
+    if rot:
+        x, y = y, -x
+        y = -y
     ax.plot(x, y, color='k')
 
 
@@ -214,6 +220,48 @@ def guitar_outline2(L):
     FEMOL.utils.plot_circle(0.673 * L, 0.38 * L, 0.175 * L / 2)
     # Fix limits
     ax.set_xlim(0-0.01, L+0.01)
+
+
+def guitar_outline_rot(L=1):
+    """ 90 degrees rotated guitar outline"""
+    ax = plt.gca()
+    ax.set_aspect('equal')
+    # Ellipse arc 1 (left side)
+    a, b, c = 0.50 * L, 0.76 * L, (0.25 * L, 0.38 * L)
+    FEMOL.utils.plot_ellipse_arc(c, a, b, np.pi / 2, 3 * np.pi / 2, rot=True)
+    # Ellipse arc 2 (right side)
+    a, b, c = 0.365 * L, 0.58 * L, (0.8175 * L, 0.38 * L)
+    FEMOL.utils.plot_ellipse_arc(c, a, b, -np.pi / 2, np.pi / 2, rot=True)
+    # Top 1
+    p = FEMOL.domains.create_polynomial(0.25 * L, 0.76 * L, 0.625 * L, (0.71225 - 0.1645 / 2) * L, 0)
+    x = np.linspace(0.25 * L, 0.625 * L, 100)
+    y = p[0] * x ** 3 + p[1] * x ** 2 + p[2] * x + p[3]
+    x, y = y, -x
+    y = -y
+    ax.plot(x, y, color='k')
+    # Top 2
+    p = FEMOL.domains.create_polynomial(0.625 * L, 0.71225 * L - 0.1645 * L / 2, 0.8175 * L, 0.67 * L, 0)
+    x = np.linspace(0.625 * L, 0.8175 * L, 100)
+    y = p[0] * x ** 3 + p[1] * x ** 2 + p[2] * x + p[3]
+    x, y = y, -x
+    y = -y
+    ax.plot(x, y, color='k')
+    # Bot 1
+    p = FEMOL.domains.create_polynomial(0.625 * L, 0.04775 * L + 0.1645 * L / 2, 0.8175 * L, 0.09 * L, 0)
+    x = np.linspace(0.625 * L, 0.8175 * L, 100)
+    y = p[0] * x ** 3 + p[1] * x ** 2 + p[2] * x + p[3]
+    x, y = y, -x
+    y = -y
+    ax.plot(x, y, color='k')
+    # Bot 2
+    p = FEMOL.domains.create_polynomial(0.25 * L, 0, 0.625 * L, (0.04775 + 0.1645 / 2) * L, 0)
+    x = np.linspace(0.25 * L, 0.625 * L, 100)
+    y = p[0] * x ** 3 + p[1] * x ** 2 + p[2] * x + p[3]
+    x, y = y, -x
+    y = -y
+    ax.plot(x, y, color='k')
+    # Soundhole
+    FEMOL.utils.plot_circle(0.673 * L, 0.38 * L, 0.175 * L / 2, rot=True)
 
 
 """
